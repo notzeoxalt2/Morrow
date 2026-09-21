@@ -329,19 +329,8 @@ internal fun AppGate(
             return
         }
 
-        autoSkipProfileSelection = true
-        if (profiles.size == 1) {
-            val onlyProfile = profiles.first()
-            if (onlyProfile.pinEnabled) {
-                gateScreen = AppGateScreen.ProfileSelection.name
-                return
-            }
-            selectProfile(onlyProfile, sync = syncOnEnter)
-            gateScreen = AppGateScreen.Main.name
-            autoSkipProfileSelection = false
-        } else {
-            gateScreen = AppGateScreen.ProfileSelection.name
-        }
+        autoSkipProfileSelection = false
+        gateScreen = AppGateScreen.ProfileSelection.name
     }
 
     LaunchedEffect(authState, networkStatusUiState.condition, profileState.profiles) {

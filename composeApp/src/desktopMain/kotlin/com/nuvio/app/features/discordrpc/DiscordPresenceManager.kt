@@ -31,19 +31,9 @@ internal object DiscordPresenceManager {
     private var syncJob: Job? = null
     private var lastActivity: DiscordActivity? = null
 
-    fun start() {
-        if (DiscordConfig.CLIENT_ID.isBlank()) return
-        DiscordRichPresenceRepository.ensureLoaded()
-        scope.launch {
-            DiscordRichPresenceRepository.enabled.collectLatest { enabled ->
-                if (enabled) startSync() else stopSync()
-            }
-        }
-    }
+    fun start() {}
 
-    fun shutdown() {
-        runBlocking { stopSync() }
-    }
+    fun shutdown() {}
 
     private suspend fun startSync() {
         syncJob?.cancel()

@@ -60,13 +60,13 @@ object AvatarRepository {
     private val log = Logger.withTag("AvatarRepository")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    private val _avatars = MutableStateFlow<List<AvatarCatalogItem>>(emptyList())
+    private val _avatars = MutableStateFlow<List<AvatarCatalogItem>>(NetflixAvatars.DEFAULT_CATALOG)
     val avatars: StateFlow<List<AvatarCatalogItem>> = _avatars.asStateFlow()
 
-    private var standardCatalog = emptyList<AvatarCatalogItem>()
+    private var standardCatalog = NetflixAvatars.DEFAULT_CATALOG
     private var memberCatalog = emptyList<AvatarCatalogItem>()
     private var memberCatalogMetadata = emptyList<MemberAvatarCatalogItem>()
-    private var standardLoaded = false
+    private var standardLoaded = true
     private var cacheHydrated = false
     private var accessObserverStarted = false
     private var standardFetchInFlight = false
@@ -78,8 +78,15 @@ object AvatarRepository {
     suspend fun fetchAvatars() {
         hydrateFromCacheIfNeeded()
         ensureMemberAccessObserver()
+        if (standardCatalog.isEmpty()) {
+            standardCatalog = NetflixAvatars.DEFAULT_CATALOG
+        }
+        publishCatalog()
         if (standardLoaded && standardCatalog.isNotEmpty()) {
-            publishCatalog()
+            return
+        }
+        if (com.nuvio.app.core.network.SupabaseConfig.URL.isBlank()) {
+            standardLoaded = true
             return
         }
         fetchStandardCatalog()
@@ -88,6 +95,14 @@ object AvatarRepository {
     suspend fun refreshAvatars(force: Boolean = false) {
         hydrateFromCacheIfNeeded()
         ensureMemberAccessObserver()
+        if (com.nuvio.app.core.network.SupabaseConfig.URL.isBlank()) {
+            standardLoaded = true
+            if (standardCatalog.isEmpty()) {
+                standardCatalog = NetflixAvatars.DEFAULT_CATALOG
+                publishCatalog()
+            }
+            return
+        }
         if (force || isRefreshDue(lastStandardRefresh)) {
             fetchStandardCatalog()
         }
@@ -113,6 +128,9 @@ object AvatarRepository {
         standardCatalog = stored.items
             .filter { it.isActive }
             .sortedWith(compareBy({ it.category }, { it.sortOrder }))
+        if (standardCatalog.isEmpty()) {
+            standardCatalog = NetflixAvatars.DEFAULT_CATALOG
+        }
         memberCatalogMetadata = stored.memberItems
         memberCatalog = memberCatalogMetadata
             .mapNotNull(::loadCachedMemberAvatar)
@@ -160,6 +178,11 @@ object AvatarRepository {
             throw error
         } catch (error: Exception) {
             log.e(error) { "Failed to fetch avatar catalog" }
+            if (standardCatalog.isEmpty()) {
+                standardCatalog = NetflixAvatars.DEFAULT_CATALOG
+                standardLoaded = true
+                publishCatalog()
+            }
         } finally {
             standardFetchInFlight = false
         }

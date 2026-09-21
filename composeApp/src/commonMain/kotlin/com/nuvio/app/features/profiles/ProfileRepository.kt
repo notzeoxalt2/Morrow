@@ -89,8 +89,33 @@ object ProfileRepository {
         persist()
     }
 
+    private fun createDefaultProfile(userId: String): NuvioProfile = NuvioProfile(
+        id = "default-1",
+        userId = userId,
+        profileIndex = 1,
+        name = "Morrow",
+        avatarColorHex = "#E50914",
+        avatarId = "netflix-classic-1",
+        avatarUrl = null,
+        usesPrimaryAddons = true,
+        usesPrimaryPlugins = true,
+    )
+
     fun loadCachedProfiles(): Boolean {
-        val stored = decodeStoredPayload() ?: return false
+        val stored = decodeStoredPayload()
+        if (stored == null || stored.profiles.isEmpty()) {
+            val defaultProfile = createDefaultProfile("guest")
+            _state.value = ProfileState(
+                profiles = listOf(defaultProfile),
+                activeProfile = defaultProfile,
+                isLoaded = true,
+                hasEverSelectedProfile = false,
+                rememberLastProfileEnabled = false,
+            )
+            activeProfileIndex = 1
+            ThemeSettingsRepository.onProfileChanged()
+            return true
+        }
         loadedCacheForUserId = stored.userId
         applyStoredPayload(stored)
         ThemeSettingsRepository.onProfileChanged()
@@ -98,23 +123,37 @@ object ProfileRepository {
     }
 
     fun ensureLoaded(userId: String) {
-        if (loadedCacheForUserId == userId && _state.value.isLoaded) return
+        if (loadedCacheForUserId == userId && _state.value.isLoaded && _state.value.profiles.isNotEmpty()) return
 
         val stored = decodeStoredPayload()
         loadedCacheForUserId = userId
-        if (stored == null) {
-            _state.value = ProfileState()
+        if (stored == null || stored.profiles.isEmpty()) {
+            val defaultProfile = createDefaultProfile(userId)
+            _state.value = ProfileState(
+                profiles = listOf(defaultProfile),
+                activeProfile = defaultProfile,
+                isLoaded = true,
+                hasEverSelectedProfile = false,
+                rememberLastProfileEnabled = false,
+            )
             activeProfileIndex = 1
-            return
-        }
-
-        if (stored.userId != userId) {
-            _state.value = ProfileState()
-            activeProfileIndex = 1
+            persist()
             return
         }
 
         applyStoredPayload(stored)
+        if (_state.value.profiles.isEmpty()) {
+            val defaultProfile = createDefaultProfile(userId)
+            _state.value = ProfileState(
+                profiles = listOf(defaultProfile),
+                activeProfile = defaultProfile,
+                isLoaded = true,
+                hasEverSelectedProfile = false,
+                rememberLastProfileEnabled = false,
+            )
+            activeProfileIndex = 1
+            persist()
+        }
     }
 
     fun clearInMemory() {

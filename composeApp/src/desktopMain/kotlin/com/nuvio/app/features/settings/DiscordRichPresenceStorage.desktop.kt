@@ -3,7 +3,7 @@ package com.nuvio.app.features.settings
 import com.nuvio.app.core.storage.DesktopStorage
 
 internal actual object DiscordRichPresencePlatform {
-    actual val isSupported: Boolean = true
+    actual val isSupported: Boolean = false
 }
 
 internal actual object DiscordRichPresenceStorage {

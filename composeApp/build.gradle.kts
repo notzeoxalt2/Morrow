@@ -515,7 +515,7 @@ val desktopReleaseVersionCode = (
     ?.toIntOrNull()
     ?: 1
 val desktopReleasePackageVersion = jpackageCompatibleVersion(desktopReleaseVersionName)
-val windowsMsiUpgradeUuid = "395990ee-9b8a-3548-922c-e7a23a495b8d"
+val windowsMsiUpgradeUuid = "a9144823-73c5-40f6-ae1c-6f876d3ddb36"
 val iosDistribution = (
     providers.gradleProperty("nuvio.ios.distribution").orNull
         ?: System.getenv("NUVIO_IOS_DISTRIBUTION")

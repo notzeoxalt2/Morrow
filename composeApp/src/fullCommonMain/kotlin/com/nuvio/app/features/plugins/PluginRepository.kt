@@ -438,7 +438,12 @@ actual object PluginRepository {
                                 val codeUrl = if (info.filename.startsWith("http://") || info.filename.startsWith("https://")) {
                                     info.filename
                                 } else {
-                                    "$baseUrl/${info.filename.trimStart('/')}"
+                                    val clean = info.filename.trimStart('/')
+                                    if (baseUrl.endsWith("/providers") && clean.startsWith("providers/")) {
+                                        "$baseUrl/${clean.removePrefix("providers/")}"
+                                    } else {
+                                        "$baseUrl/$clean"
+                                    }
                                 }
                                 runCatching {
                                     val code = httpGetText(codeUrl)
@@ -621,6 +626,13 @@ actual object PluginRepository {
         _uiState.value = loadedState.state
         initialized = true
         if (loadedState.requiresMigration) persist()
+        loadedState.state.repositories
+            .filter { it.isRefreshing || it.scraperCount <= 0 }
+            .forEach { repo ->
+                scope.launch {
+                    refreshRepository(repo.manifestUrl, pushAfterRefresh = false)
+                }
+            }
     }
 
     private fun loadStateAsUiState(profileId: Int): LoadedPluginState {
@@ -636,6 +648,7 @@ actual object PluginRepository {
             }
             ?: emptyList()
         val defaultPluginRepoUrls = listOf(
+            "https://raw.githubusercontent.com/notzeoxalt2/Morrow/main/providers/manifest.json",
             "https://raw.githubusercontent.com/D3adlyRocket/All-in-One-Nuvio/refs/heads/main/manifest.json",
             "https://raw.githubusercontent.com/yoruix/nuvio-providers/refs/heads/main/manifest.json",
             "https://raw.githubusercontent.com/Abinanthankv/NuvioRepo/refs/heads/master/manifest.json",
@@ -648,6 +661,7 @@ actual object PluginRepository {
             PluginRepositoryItem(
                 manifestUrl = url,
                 name = when {
+                    url.contains("notzeoxalt2/Morrow") -> "AnimeByMorrow (Requested Sites)"
                     url.contains("D3adlyRocket") -> "All-in-One Providers"
                     url.contains("yoruix") -> "Yoruix Anime & Media"
                     url.contains("Abinanthankv") -> "Nuvio Main Repo"

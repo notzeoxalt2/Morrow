@@ -45,10 +45,14 @@ internal object DesktopWindowModeStorage {
         val y = store.getFloat(WindowYKey) ?: return null
         val width = store.getFloat(WindowWidthKey) ?: return null
         val height = store.getFloat(WindowHeightKey) ?: return null
+        if (x < -200f || y < -200f || width < 400f || height < 300f) return null
         return DesktopWindowGeometry(x = x, y = y, width = width, height = height)
     }
 
     fun saveWindowedGeometry(geometry: DesktopWindowGeometry) {
+        if (geometry.x < -200f || geometry.y < -200f || geometry.width < 400f || geometry.height < 300f) {
+            return
+        }
         store.putFloat(WindowXKey, geometry.x)
         store.putFloat(WindowYKey, geometry.y)
         store.putFloat(WindowWidthKey, geometry.width)

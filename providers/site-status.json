@@ -1,0 +1,27 @@
+{
+  "checkedAt": "2026-09-21T15:20:54Z",
+  "results": [
+    {"url": "https://animesalt.cx/", "status": "loaded"},
+    {"url": "https://saltanime.in/", "status": "loaded"},
+    {"url": "https://animedekho.app/", "status": "loaded"},
+    {"url": "https://hianime.at/home", "status": "loaded"},
+    {"url": "https://anikage.cc/", "status": "loaded"},
+    {"url": "https://www.miruro.to/", "status": "loaded"},
+    {"url": "https://reanime.to/home", "status": "loaded"},
+    {"url": "https://animepahe.pw/", "status": "loaded_with_cloudflare_challenge"},
+    {"url": "https://anikototv.to/", "status": "loaded"},
+    {"url": "https://www.enma.lol/", "status": "loaded"},
+    {"url": "https://anime.nexus/", "status": "loaded"},
+    {"url": "https://anidb.app/home", "status": "loaded_under_maintenance"},
+    {"url": "https://anidap.lol/", "status": "loaded"},
+    {"url": "https://animex.one/home", "status": "loaded"},
+    {"url": "https://animetvplus.xyz/", "status": "loaded"},
+    {"url": "https://anistream.one/", "status": "loaded"},
+    {"url": "https://kaa.lt/", "status": "loaded"},
+    {"url": "https://justanime.to/", "status": "loaded"},
+    {"url": "https://aniwaves.ru/", "status": "loaded"},
+    {"url": "https://animeheaven.me/", "status": "loaded"},
+    {"url": "https://anitaku.io/", "status": "loaded"},
+    {"url": "https://lunarx.to/", "status": "loaded"}
+  ]
+}
