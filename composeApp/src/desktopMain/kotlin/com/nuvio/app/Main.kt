@@ -77,6 +77,7 @@ fun main(args: Array<String>) {
         val wasFullscreenOnLastExit = remember { DesktopWindowModeStorage.loadWasFullscreen() }
         val wasMaximizedOnLastExit = remember { DesktopWindowModeStorage.loadWasMaximized() }
         val savedGeometry = remember { DesktopWindowModeStorage.loadWindowedGeometry() }
+        val restoresMaximizedWindowPlacement = DesktopHostOs.current != DesktopHostOs.MACOS
         val initialPlacement = when {
             wasFullscreenOnLastExit && DesktopHostOs.current != DesktopHostOs.WINDOWS -> {
                 WindowPlacement.Fullscreen
