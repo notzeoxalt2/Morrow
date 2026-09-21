@@ -48,6 +48,8 @@ object AuthRepository {
                 email = null,
                 isAnonymous = true,
             )
+        } else {
+            signInAnonymously()
         }
 
         sessionStatusJob = scope.launch {

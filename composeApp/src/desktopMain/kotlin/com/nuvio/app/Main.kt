@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.deeplink.handleAppUrl
 import com.nuvio.app.core.diagnostics.SentryInitializer
 import com.nuvio.app.core.ui.NuvioTheme
-import com.nuvio.app.features.discordrpc.DiscordPresenceManager
 import com.nuvio.app.features.p2p.P2pStreamingEngine
 import com.nuvio.app.features.plugins.configureDesktopQuickJsLibrary
 import com.nuvio.app.features.player.PlatformPlayerSurface
@@ -67,7 +66,6 @@ fun main(args: Array<String>) {
     // on the very first Compose frame (matching Android's SharedPreferences behavior).
     ProfileRepository.loadCachedProfiles()
     AppIconRepository.ensureLoaded()
-    DiscordPresenceManager.start()
 
     application {
         val appIconState by AppIconRepository.state.collectAsState()
@@ -79,43 +77,24 @@ fun main(args: Array<String>) {
         val wasFullscreenOnLastExit = remember { DesktopWindowModeStorage.loadWasFullscreen() }
         val wasMaximizedOnLastExit = remember { DesktopWindowModeStorage.loadWasMaximized() }
         val savedGeometry = remember { DesktopWindowModeStorage.loadWindowedGeometry() }
-        val restoresMaximizedWindowPlacement = DesktopHostOs.current != DesktopHostOs.MACOS
         val initialPlacement = when {
             wasFullscreenOnLastExit && DesktopHostOs.current != DesktopHostOs.WINDOWS -> {
                 WindowPlacement.Fullscreen
             }
-            wasMaximizedOnLastExit == false && savedGeometry != null -> {
-                WindowPlacement.Floating
-            }
-            restoresMaximizedWindowPlacement -> {
+            wasMaximizedOnLastExit == true -> {
                 WindowPlacement.Maximized
             }
             else -> WindowPlacement.Floating
         }
-        val isStartingMaximizedOrFullscreen =
-            initialPlacement == WindowPlacement.Maximized || initialPlacement == WindowPlacement.Fullscreen
-        val maxScreenBounds = remember {
-            runCatching {
-                java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
-            }.getOrNull()
-        }
-        val initialWidth = when {
-            isStartingMaximizedOrFullscreen && maxScreenBounds != null -> maxScreenBounds.width.dp
-            savedGeometry != null -> savedGeometry.width.dp
-            else -> 1280.dp
-        }
-        val initialHeight = when {
-            isStartingMaximizedOrFullscreen && maxScreenBounds != null -> maxScreenBounds.height.dp
-            savedGeometry != null -> savedGeometry.height.dp
-            else -> 820.dp
-        }
+        val initialWidth = (savedGeometry?.width ?: 1280f).dp
+        val initialHeight = (savedGeometry?.height ?: 800f).dp
+        val initialPosition = savedGeometry?.takeIf { it.x >= 0f && it.y >= 0f && it.width >= 400f && it.height >= 300f }
+            ?.let { WindowPosition.Absolute(x = it.x.dp, y = it.y.dp) }
+            ?: WindowPosition.Aligned(androidx.compose.ui.Alignment.Center)
         val windowState = rememberWindowState(
             width = initialWidth,
             height = initialHeight,
-            position = savedGeometry?.let { WindowPosition.Absolute(x = it.x.dp, y = it.y.dp) }
-                ?: WindowPosition.PlatformDefault,
-            // Windows fullscreen is emulated natively (see DesktopAppFullscreenController)
-            // rather than driven by WindowPlacement, so it's restored separately below.
+            position = initialPosition,
             placement = initialPlacement,
         )
         val fullscreenController = remember { DesktopAppFullscreenController() }
@@ -123,7 +102,6 @@ fun main(args: Array<String>) {
         SwingWindow(
             onCloseRequest = {
                 P2pStreamingEngine.shutdown()
-                DiscordPresenceManager.shutdown()
                 SentryInitializer.close()
                 exitApplication()
             },
@@ -137,6 +115,11 @@ fun main(args: Array<String>) {
                 window.rootPane.background = NuvioDesktopNativeBackground
                 window.contentPane.background = NuvioDesktopNativeBackground
                 (window.contentPane as? JComponent)?.isOpaque = true
+            }
+            LaunchedEffect(window) {
+                window.isVisible = true
+                window.toFront()
+                window.requestFocus()
             }
             LaunchedEffect(window, appIconState.selected) {
                 val backgroundSuffix = "-transparent"
@@ -175,7 +158,7 @@ fun main(args: Array<String>) {
                             DesktopWindowModeStorage.saveWasMaximized(placement == WindowPlacement.Maximized)
                         }
                         val isWindowed = placement == WindowPlacement.Floating && !isFullscreen
-                        if (isWindowed && position.isSpecified) {
+                        if (isWindowed && position.isSpecified && position.x.value >= -200f && position.y.value >= -200f) {
                             DesktopWindowModeStorage.saveWindowedGeometry(
                                 DesktopWindowGeometry(
                                     x = position.x.value,
@@ -213,7 +196,7 @@ fun main(args: Array<String>) {
             }
 
             if (smokePlayerUrl == null) {
-                App(bypassAppGate = true)
+                App(bypassAppGate = false)
             } else {
                 // The player surface reads LocalNuvioPlatformDensity, which only
                 // NuvioTheme provides — the bare smoke harness must supply it too.

@@ -962,8 +962,18 @@ internal object JsBindings {
     """.trimIndent()
 
     private fun requirePolyfill() = """
+        var __anime_resolver = (function() {
+            var module = { exports: {} };
+            var exports = module.exports;
+            ${ResolverJs.code}
+            return module.exports;
+        })();
+
         var require = function(moduleName) {
-            var norm = String(moduleName || '').toLowerCase();
+            var norm = String(moduleName || '').toLowerCase().trim();
+            if (norm === './resolver.js' || norm === 'resolver.js' || norm === './resolver' || norm === 'resolver') {
+                return __anime_resolver;
+            }
             if (norm === 'cheerio' || norm === 'cheerio-without-node-native' || norm === 'react-native-cheerio') {
                 return cheerio;
             }

@@ -5,7 +5,7 @@ import java.util.Locale
 
 internal object PluginStorage {
     private const val pluginsStateKey = "plugins_state"
-    private val store = DesktopStorage.store("nuvio_plugins")
+    private val store = DesktopStorage.store("morrow_plugins")
 
     fun loadState(profileId: Int): String? =
         store.getString("${pluginsStateKey}_$profileId")
