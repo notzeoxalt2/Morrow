@@ -15,8 +15,10 @@ object TmdbService {
     private val tmdbToImdbCache = linkedMapOf<String, String>()
     private val cacheMutex = Mutex()
 
+    internal const val DEFAULT_TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c"
+
     suspend fun ensureTmdbId(videoId: String, mediaType: String, fallbackImdbId: String? = null): String? {
-        val apiKey = TmdbSettingsRepository.effectiveApiKey()
+        val apiKey = TmdbSettingsRepository.effectiveApiKey().ifBlank { DEFAULT_TMDB_API_KEY }
 
         val normalized = videoId
             .removePrefix("tmdb:")
@@ -45,7 +47,7 @@ object TmdbService {
     }
 
     suspend fun tmdbToImdb(tmdbId: Int, mediaType: String): String? {
-        val apiKey = TmdbSettingsRepository.effectiveApiKey()
+        val apiKey = TmdbSettingsRepository.effectiveApiKey().ifBlank { DEFAULT_TMDB_API_KEY }
 
         val cacheKey = "$tmdbId:${normalizeMediaType(mediaType)}"
         cacheMutex.withLock {
@@ -56,8 +58,11 @@ object TmdbService {
             "tv" -> "tv/$tmdbId/external_ids"
             else -> "movie/$tmdbId/external_ids"
         }
-        val body = fetch<TmdbExternalIdsResponse>(endpoint = endpoint, apiKey = apiKey) ?: return null
-        val imdbId = body.imdbId?.trim()?.takeIf(String::isNotBlank) ?: return null
+        var body = fetch<TmdbExternalIdsResponse>(endpoint = endpoint, apiKey = apiKey)
+        if (body == null && apiKey != DEFAULT_TMDB_API_KEY) {
+            body = fetch<TmdbExternalIdsResponse>(endpoint = endpoint, apiKey = DEFAULT_TMDB_API_KEY)
+        }
+        val imdbId = body?.imdbId?.trim()?.takeIf(String::isNotBlank) ?: return null
 
         cacheMutex.withLock {
             tmdbToImdbCache[cacheKey] = imdbId
@@ -73,15 +78,24 @@ object TmdbService {
             imdbToTmdbCache[cacheKey]?.let { return it }
         }
 
-        val body = fetch<TmdbFindResponse>(
+        val effectiveKey = apiKey.ifBlank { DEFAULT_TMDB_API_KEY }
+        var body = fetch<TmdbFindResponse>(
             endpoint = "find/$imdbId",
-            apiKey = apiKey,
+            apiKey = effectiveKey,
             query = mapOf("external_source" to "imdb_id"),
-        ) ?: return null
+        )
+        if (body == null && effectiveKey != DEFAULT_TMDB_API_KEY) {
+            body = fetch<TmdbFindResponse>(
+                endpoint = "find/$imdbId",
+                apiKey = DEFAULT_TMDB_API_KEY,
+                query = mapOf("external_source" to "imdb_id"),
+            )
+        }
+        if (body == null) return null
 
-        val resultId = when (normalizedType) {
-            "movie" -> body.movieResults.firstOrNull()?.id
-            "tv" -> body.tvResults.firstOrNull()?.id
+        var resultId = when (normalizedType) {
+            "movie" -> body.movieResults.firstOrNull()?.id ?: body.tvResults.firstOrNull()?.id
+            "tv" -> body.tvResults.firstOrNull()?.id ?: body.movieResults.firstOrNull()?.id
             else -> body.movieResults.firstOrNull()?.id ?: body.tvResults.firstOrNull()?.id
         }?.takeIf { it > 0 }?.toString()
 

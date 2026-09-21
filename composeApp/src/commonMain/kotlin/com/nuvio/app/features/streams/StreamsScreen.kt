@@ -95,6 +95,7 @@ import com.nuvio.app.core.ui.dismissNuvioBottomSheet
 import com.nuvio.app.core.ui.nuvioDesktopDragScroll
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.downloads.DownloadsRepository
+import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -230,10 +231,30 @@ fun StreamsScreen(
         }
     }
 
+    val activeMeta = remember(parentMetaId, videoId) {
+        MetaDetailsRepository.getActiveMeta(parentMetaId.takeIf { it.isNotBlank() } ?: videoId)
+    }
+    val fallbackImdbId = remember(parentMetaId, videoId, activeMeta) {
+        activeMeta?.imdbId?.takeIf { it.isNotBlank() }
+            ?: (parentMetaId.takeIf { it.isNotBlank() } ?: videoId).let { id ->
+                val clean = id.substringBefore(":")
+                if (clean.matches(Regex("""^tt\d{5,}$"""))) clean else null
+            }
+    }
+    val effectiveBackground = background
+        ?: activeMeta?.background
+        ?: fallbackImdbId?.let { "https://images.metahub.space/background/original/$it/img" }
+    val effectiveLogo = logo
+        ?: activeMeta?.logo
+        ?: fallbackImdbId?.let { "https://images.metahub.space/logo/medium/$it/img" }
+    val effectivePoster = poster
+        ?: activeMeta?.poster
+        ?: fallbackImdbId?.let { "https://images.metahub.space/poster/original/$it/img" }
+
     val heroArtwork = if (isEpisode) {
-        episodeThumbnail ?: background ?: poster
+        episodeThumbnail ?: effectiveBackground ?: effectivePoster
     } else {
-        background ?: poster
+        effectiveBackground ?: effectivePoster
     }
     val isEpisodeWatched = episodeProgress?.isEffectivelyCompleted == true || watchedItemKeys(
         type = parentMetaType,
@@ -269,9 +290,9 @@ fun StreamsScreen(
             TabletStreamsLayout(
                 isEpisode = isEpisode,
                 title = title,
-                logo = logo,
-                poster = poster,
-                background = background,
+                logo = effectiveLogo,
+                poster = effectivePoster,
+                background = effectiveBackground,
                 episodeThumbnail = episodeThumbnail,
                 seasonNumber = seasonNumber,
                 episodeNumber = episodeNumber,
@@ -298,7 +319,7 @@ fun StreamsScreen(
                 isEpisode = isEpisode,
                 backgroundMode = streamDisplaySettings.backgroundMode,
                 title = title,
-                logo = logo,
+                logo = effectiveLogo,
                 heroArtwork = heroArtwork,
                 seasonNumber = seasonNumber,
                 episodeNumber = episodeNumber,

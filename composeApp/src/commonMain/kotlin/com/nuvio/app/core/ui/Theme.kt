@@ -26,8 +26,8 @@ import nuvio.composeapp.generated.resources.jetbrains_sans_regular
 import nuvio.composeapp.generated.resources.jetbrains_sans_semibold
 import org.jetbrains.compose.resources.Font
 
-val LocalAppTheme = staticCompositionLocalOf { AppTheme.WHITE }
-val LocalThemePalette = staticCompositionLocalOf { ThemeColors.White }
+val LocalAppTheme = staticCompositionLocalOf { AppTheme.CRIMSON }
+val LocalThemePalette = staticCompositionLocalOf { ThemeColors.Crimson }
 
 val MaterialTheme.themePalette: ThemeColorPalette
     @Composable
@@ -57,7 +57,7 @@ private fun buildColorScheme(palette: ThemeColorPalette, amoled: Boolean = false
     onBackground = Color(0xFFF5F7F8),
     surface = palette.backgroundElevated,
     onSurface = Color(0xFFF5F7F8),
-    surfaceVariant = palette.backgroundElevated,
+    surfaceVariant = palette.backgroundCard,
     surfaceTint = palette.backgroundElevated,
     onSurfaceVariant = Color(0xFF969CA3),
     outline = Color(0xFF252A2A),

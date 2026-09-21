@@ -1,5 +1,6 @@
 package com.nuvio.app.features.plugins.runtime
 
+import co.touchlab.kermit.Logger
 import com.nuvio.app.features.plugins.PluginRuntimeResult
 import com.nuvio.app.features.plugins.PluginStorage
 import com.nuvio.app.features.plugins.runtime.crypto.CryptoBridge
@@ -41,6 +42,7 @@ internal const val MAX_CONCURRENT_PLUGINS = 10
 internal const val PLUGIN_TIMEOUT_MS = 60_000L
 
 internal object PluginRuntime {
+    private val log = Logger.withTag("PluginRuntime")
     private val json = Json { ignoreUnknownKeys = true }
     private val scraperSemaphore = Semaphore(MAX_CONCURRENT_PLUGINS)
     private val searchPaused = MutableStateFlow(false)
@@ -107,14 +109,14 @@ internal object PluginRuntime {
                         UrlBridge().register(this)
                         CryptoBridge().register(this)
 
-                        evaluateCached({ JsRuntime.polyfillBytecode(this) }, JsBindings.staticPolyfillCode)
+                        evaluate<Any?>(JsBindings.staticPolyfillCode)
                         evaluate<Any?>(wrapPluginModule(code))
-                        evaluateCached({ JsRuntime.settingsCallBytecode(this) }, JsBindings.staticSettingsCallCode)
+                        evaluate<Any?>(JsBindings.staticSettingsCallCode)
                         deferred.await()
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
-                } catch (_: Exception) {
+                } catch (_: Throwable) {
                     null
                 }
             }
@@ -149,7 +151,7 @@ internal object PluginRuntime {
                     scraperId = scraperId,
                     scraperSettingsJson = settingsJson,
                     callArgsJson = callArgsJson,
-                    onResult = { deferred.complete(it) },
+                    onResult = { if (!deferred.isCompleted) deferred.complete(it) },
                 ),
             )
             addModule(FetchBridge())
@@ -162,12 +164,18 @@ internal object PluginRuntime {
         try {
             jsRuntime.use {
                 hostRegistry.registerAll(this)
-                evaluateCached({ JsRuntime.polyfillBytecode(this) }, JsBindings.staticPolyfillCode)
+                evaluate<Any?>(JsBindings.staticPolyfillCode)
                 evaluate<Any?>(wrapPluginModule(code))
-                evaluateCached({ JsRuntime.callBytecode(this) }, JsBindings.staticCallCode)
+                evaluate<Any?>(JsBindings.staticCallCode)
                 deferred.await()
             }
-            return parseJsonResults(deferred.await())
+            val raw = deferred.await()
+            return parseJsonResults(raw)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (t: Throwable) {
+            log.w(t) { "Plugin runtime failed safely for $scraperId" }
+            return emptyList()
         } finally {
             domBridge.clear()
         }
@@ -180,18 +188,6 @@ internal object PluginRuntime {
             $code
         })();
     """.trimIndent()
-
-    private suspend fun com.dokar.quickjs.QuickJs.evaluateCached(
-        bytecode: com.dokar.quickjs.QuickJs.() -> ByteArray,
-        source: String,
-    ) {
-        val compiled = runCatching { bytecode() }.getOrNull()
-        if (compiled != null) {
-            evaluate<Any?>(compiled)
-        } else {
-            evaluate<Any?>(source)
-        }
-    }
 
     private fun parseJsonResults(rawJson: String): List<PluginRuntimeResult> {
         return runCatching {

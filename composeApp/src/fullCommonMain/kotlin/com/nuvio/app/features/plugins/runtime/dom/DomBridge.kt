@@ -63,6 +63,29 @@ internal class DomBridge : HostModule {
             }
         }
 
+        runtime.function("__cheerio_children") { args ->
+            val docId = args.getOrNull(0)?.toString() ?: ""
+            val elementId = args.getOrNull(1)?.toString() ?: ""
+            val selector = args.getOrNull(2)?.toString() ?: ""
+            val element = elementCache[elementId] ?: return@function "[]"
+            try {
+                val elements = if (selector.isBlank() || selector == "*") {
+                    element.children()
+                } else {
+                    val formatted = selector.replace(containsRegex, ":contains($1)")
+                    element.children().select(formatted)
+                }
+                val ids = elements.mapIndexed { index, el ->
+                    val id = "$docId:child:$index:${el.hashCode()}"
+                    elementCache[id] = el
+                    id
+                }
+                "[" + ids.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" } + "]"
+            } catch (_: Exception) {
+                "[]"
+            }
+        }
+
         runtime.function("__cheerio_text") { args ->
             val elementIds = args.getOrNull(1)?.toString() ?: ""
             elementIds.split(",")
@@ -111,6 +134,16 @@ internal class DomBridge : HostModule {
             val prevId = "$docId:prev:${prev.hashCode()}"
             elementCache[prevId] = prev
             prevId
+        }
+
+        runtime.function("__cheerio_parent") { args ->
+            val docId = args.getOrNull(0)?.toString() ?: ""
+            val elementId = args.getOrNull(1)?.toString() ?: ""
+            val element = elementCache[elementId] ?: return@function "__NONE__"
+            val parent = element.parent() ?: return@function "__NONE__"
+            val parentId = "$docId:parent:${parent.hashCode()}"
+            elementCache[parentId] = parent
+            parentId
         }
     }
 

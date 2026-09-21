@@ -838,6 +838,8 @@ internal object JsBindings {
                 return $;
             }
         };
+        cheerio.default = cheerio;
+        cheerio.__esModule = true;
 
         function createCheerioWrapper(docId, selector) {
             var elementIds;
@@ -920,11 +922,9 @@ internal object JsBindings {
                         var result = callback.call(elWrapper, i, elWrapper);
                         if (result !== undefined && result !== null) results.push(result);
                     }
-                    return {
-                        length: results.length,
-                        get: function(index) { return typeof index === 'number' ? results[index] : results; },
-                        toArray: function() { return results; }
-                    };
+                    results.get = function(index) { return typeof index === 'number' ? results[index] : results; };
+                    results.toArray = function() { return results; };
+                    return results;
                 },
                 filter: function(selectorOrCallback) {
                     if (typeof selectorOrCallback === 'function') {
@@ -938,8 +938,23 @@ internal object JsBindings {
                     }
                     return wrapper;
                 },
-                children: function(sel) { return this.find(sel || '*'); },
-                parent: function() { return createCheerioWrapperFromIds(docId, []); },
+                children: function(sel) {
+                    var allIds = [];
+                    for (var i = 0; i < ids.length; i++) {
+                        var childIdsJson = __cheerio_children(docId, ids[i], sel || '');
+                        var childIds = JSON.parse(childIdsJson);
+                        allIds = allIds.concat(childIds);
+                    }
+                    return createCheerioWrapperFromIds(docId, allIds);
+                },
+                parent: function() {
+                    var parentIds = [];
+                    for (var i = 0; i < ids.length; i++) {
+                        var pId = __cheerio_parent(docId, ids[i]);
+                        if (pId && pId !== '__NONE__') parentIds.push(pId);
+                    }
+                    return createCheerioWrapperFromIds(docId, parentIds);
+                },
                 toArray: function() { return ids.map(function(id) { return createCheerioWrapperFromIds(docId, [id]); }); }
             };
             return wrapper;
@@ -948,10 +963,11 @@ internal object JsBindings {
 
     private fun requirePolyfill() = """
         var require = function(moduleName) {
-            if (moduleName === 'cheerio' || moduleName === 'cheerio-without-node-native' || moduleName === 'react-native-cheerio') {
+            var norm = String(moduleName || '').toLowerCase();
+            if (norm === 'cheerio' || norm === 'cheerio-without-node-native' || norm === 'react-native-cheerio') {
                 return cheerio;
             }
-            if (moduleName === 'crypto-js') {
+            if (norm === 'crypto-js') {
                 return CryptoJS;
             }
             throw new Error("Module '" + moduleName + "' is not available");

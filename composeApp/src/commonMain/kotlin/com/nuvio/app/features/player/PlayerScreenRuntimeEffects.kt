@@ -643,6 +643,24 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         } else null
     }
 
+    var nextEpisodePrefetchDispatched by remember(activeVideoId) { mutableStateOf(false) }
+    LaunchedEffect(nextEpisodeInfo, playbackSnapshot.positionMs >= 10_000L) {
+        val info = nextEpisodeInfo ?: return@LaunchedEffect
+        val curSeason = activeSeasonNumber ?: return@LaunchedEffect
+        val curEpisode = activeEpisodeNumber ?: return@LaunchedEffect
+        if (!nextEpisodePrefetchDispatched || playbackSnapshot.positionMs >= 10_000L) {
+            nextEpisodePrefetchDispatched = true
+            com.nuvio.app.features.streams.EpisodeStreamPrefetcher.prefetchNextEpisodes(
+                currentType = parentMetaType,
+                currentVideoId = activeVideoId.orEmpty(),
+                parentMetaId = parentMetaId,
+                currentSeason = curSeason,
+                currentEpisode = curEpisode,
+                metaVideos = playerMetaVideos,
+            )
+        }
+    }
+
     LaunchedEffect(
         playbackSnapshot.positionMs,
         playbackSnapshot.durationMs,

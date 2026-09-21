@@ -67,10 +67,35 @@ object AddonRepository {
         currentProfileId = effectiveProfileId
         log.d { "initialize() — loading local addons for profile $currentProfileId" }
 
-        val storedUrls = dedupeManifestUrls(AddonStorage.loadInstalledAddonUrls(currentProfileId))
+        var storedUrls = dedupeManifestUrls(AddonStorage.loadInstalledAddonUrls(currentProfileId))
         val enabledByUrl = loadLocalEnabledStates()
         log.d { "initialize() — local addon count: ${storedUrls.size}" }
-        if (storedUrls.isEmpty()) return
+
+        if (storedUrls.isEmpty()) {
+            val defaults = listOf(
+                "https://v3-cinemeta.strem.io/manifest.json",
+                "https://aiometadata.elfhosted.com/stremio/d1fa9f04-e1cf-43ae-9d7a-c309528c21e2/manifest.json",
+                "https://opensubtitles-v3.strem.io/manifest.json",
+            )
+            log.i { "initialize() — seeding ${defaults.size} default addons for profile $currentProfileId" }
+            AddonStorage.saveInstalledAddonUrls(currentProfileId, defaults)
+            storedUrls = defaults
+        }
+
+        val aioMetadataUrl = "https://aiometadata.elfhosted.com/stremio/d1fa9f04-e1cf-43ae-9d7a-c309528c21e2/manifest.json"
+        var needsSave = false
+        if (storedUrls.any { it.contains("anime-kitsu.strem.fun") }) {
+            storedUrls = storedUrls.map { if (it.contains("anime-kitsu.strem.fun")) aioMetadataUrl else it }
+            needsSave = true
+        }
+        if (storedUrls.none { it.contains("aiometadata.elfhosted.com") }) {
+            storedUrls = storedUrls + aioMetadataUrl
+            needsSave = true
+        }
+        storedUrls = dedupeManifestUrls(storedUrls)
+        if (needsSave) {
+            AddonStorage.saveInstalledAddonUrls(currentProfileId, storedUrls)
+        }
 
         val existingByUrl = _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
         _uiState.value = AddonsUiState(

@@ -521,7 +521,13 @@ object MetaDetailsRepository {
         )
     }
 
-   
+    fun getActiveMeta(id: String? = null): MetaDetails? {
+        val current = _uiState.value.meta
+        if (id == null) return current
+        if (current?.id == id || current?.imdbId == id) return current
+        return cachedMetaByRequestKey.values.firstOrNull { it.baseMeta.id == id || it.baseMeta.imdbId == id }?.baseMeta
+    }
+
     fun findEmbeddedStreams(videoId: String): List<com.nuvio.app.features.streams.StreamItem> {
         val meta = _uiState.value.meta ?: return emptyList()
         val videosWithStreams = meta.videos.filter { it.streams.isNotEmpty() }

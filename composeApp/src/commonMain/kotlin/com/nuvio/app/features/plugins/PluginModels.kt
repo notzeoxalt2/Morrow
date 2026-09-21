@@ -69,6 +69,12 @@ data class PluginScraper(
 ) {
     fun supportsType(type: String): Boolean {
         val normalizedType = normalizePluginType(type)
+        if (normalizedType == "anime") {
+            return supportedTypes.any { st ->
+                val norm = normalizePluginType(st)
+                norm == "anime" || norm == "tv" || norm == "movie"
+            }
+        }
         return supportedTypes.map { normalizePluginType(it) }.contains(normalizedType)
     }
 }

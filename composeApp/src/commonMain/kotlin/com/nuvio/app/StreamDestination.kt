@@ -653,6 +653,26 @@ internal fun StreamDestination(
         }
     }
 
+    val destinationActiveMeta = remember(effectiveVideoId, launch.parentMetaId) {
+        MetaDetailsRepository.getActiveMeta(launch.parentMetaId ?: effectiveVideoId)
+    }
+    val destinationFallbackImdbId = remember(effectiveVideoId, launch.parentMetaId, destinationActiveMeta) {
+        destinationActiveMeta?.imdbId?.takeIf { it.isNotBlank() }
+            ?: (launch.parentMetaId ?: effectiveVideoId).let { id ->
+                val clean = id.substringBefore(":")
+                if (clean.matches(Regex("""^tt\d{5,}$"""))) clean else null
+            }
+    }
+    val resolvedBackground = launch.background
+        ?: destinationActiveMeta?.background
+        ?: destinationFallbackImdbId?.let { "https://images.metahub.space/background/original/$it/img" }
+    val resolvedLogo = launch.logo
+        ?: destinationActiveMeta?.logo
+        ?: destinationFallbackImdbId?.let { "https://images.metahub.space/logo/medium/$it/img" }
+    val resolvedPoster = launch.poster
+        ?: destinationActiveMeta?.poster
+        ?: destinationFallbackImdbId?.let { "https://images.metahub.space/poster/original/$it/img" }
+
     Box(modifier = Modifier.fillMaxSize()) {
         StreamsScreen(
             showLoadingScreen = showLoadingScreen,
@@ -661,9 +681,9 @@ internal fun StreamDestination(
             parentMetaId = launch.parentMetaId ?: effectiveVideoId,
             parentMetaType = launch.parentMetaType ?: launch.type,
             title = launch.title,
-            logo = launch.logo,
-            poster = launch.poster,
-            background = launch.background,
+            logo = resolvedLogo,
+            poster = resolvedPoster,
+            background = resolvedBackground,
             seasonNumber = launch.seasonNumber,
             episodeNumber = launch.episodeNumber,
             episodeTitle = launch.episodeTitle,

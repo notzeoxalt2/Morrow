@@ -14,6 +14,7 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.PluginsUiState
 import com.nuvio.app.features.plugins.pluginContentId
+import com.nuvio.app.features.providers.offline.OfflineAnimeProviders
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.InstalledStreamAddonTarget
 import com.nuvio.app.features.streams.StreamAutoPlaySelector
@@ -22,6 +23,7 @@ import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLoadCompletion
 import com.nuvio.app.features.streams.StreamParser
+import com.nuvio.app.features.streams.StreamSessionCache
 import com.nuvio.app.features.streams.StreamsUiState
 import com.nuvio.app.features.streams.runCatchingUnlessCancelled
 import com.nuvio.app.features.streams.sortedForGroupedDisplay
@@ -29,6 +31,7 @@ import com.nuvio.app.features.streams.streamAddonInstanceId
 import com.nuvio.app.features.streams.toEmptyStateReason
 import com.nuvio.app.features.streams.toPluginProviderGroups
 import com.nuvio.app.features.streams.toStreamItem
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,6 +42,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 
@@ -229,10 +235,48 @@ object PlayerStreamsRepository {
             return
         }
 
+        val debridSettings = DebridSettingsRepository.snapshot()
+        val isCacheComplete = if (!forceRefresh) {
+            StreamSessionCache.isComplete(
+                type = type,
+                videoId = videoId,
+                season = season,
+                episode = episode,
+            )
+        } else false
+
+        val cachedSessionStreams = if (!forceRefresh) {
+            StreamSessionCache.get(
+                type = type,
+                videoId = videoId,
+                season = season,
+                episode = episode,
+            )
+        } else null
+
+        if (isCacheComplete && cachedSessionStreams != null && cachedSessionStreams.isNotEmpty()) {
+            log.i { "PlayerStreamsRepo instant complete cache hit: ${cachedSessionStreams.size} stream groups for $type $videoId (S$season:E$episode)" }
+            val presentedGroups = cachedSessionStreams.map { group ->
+                val badgeGroup = StreamBadgePresentation.apply(
+                    groups = listOf(group),
+                    rules = streamBadgeRules,
+                ).firstOrNull() ?: group
+                DebridStreamPresentation.apply(
+                    groups = listOf(badgeGroup),
+                    settings = debridSettings,
+                ).firstOrNull() ?: badgeGroup
+            }
+            stateFlow.value = StreamsUiState(
+                groups = presentedGroups,
+                activeAddonIds = presentedGroups.map { it.addonId }.toSet(),
+                isAnyLoading = false,
+            )
+            return
+        }
+
         val installedAddons = AddonRepository.uiState.value.addons.enabledAddons()
         PlayerSettingsRepository.ensureLoaded()
         val playerSettings = PlayerSettingsRepository.uiState.value
-        val debridSettings = DebridSettingsRepository.snapshot()
         val pluginScrapers = if (AppFeaturePolicy.pluginsEnabled) {
             PluginRepository.getEnabledScrapersForType(type)
         } else {
@@ -348,6 +392,16 @@ object PlayerStreamsRepository {
                         installedOrder = installedAddonOrder,
                     )
                     val anyLoading = updated.any { it.isLoading }
+                    if (!anyLoading || updated.any { it.streams.isNotEmpty() }) {
+                        StreamSessionCache.put(
+                            type = type,
+                            videoId = videoId,
+                            season = season,
+                            episode = episode,
+                            groups = updated,
+                            isComplete = !anyLoading,
+                        )
+                    }
                     current.copy(
                         groups = updated,
                         isAnyLoading = anyLoading,
@@ -410,12 +464,13 @@ object PlayerStreamsRepository {
                             url = url,
                             forceRefresh = forceRefresh,
                         )
-                        StreamParser.parse(
+                        val parsed = StreamParser.parse(
                             payload = payload,
                             addonName = displayName,
                             addonId = addon.addonId,
                             addonLogo = addon.manifest.logoUrl,
                         )
+                        parsed.filterNot { it.isTorrentStream || !it.infoHash.isNullOrBlank() }
                     }.fold(
                         onSuccess = { streams ->
                             log.d { "fetched $panelName request=$requestKey addon=$displayName streams=${streams.size}" }
@@ -430,46 +485,87 @@ object PlayerStreamsRepository {
                 }
             }
 
+            launch {
+                val meta = MetaDetailsRepository.getActiveMeta(videoId)
+                val cleanTitle = meta?.name ?: videoId
+                val mediaLookupId = meta?.imdbId ?: when {
+                    videoId.startsWith("tt") -> videoId.substringBefore(":")
+                    else -> null
+                }
+                val metaYear = meta?.releaseInfo?.take(4)
+                OfflineAnimeProviders.fetchAllStreams(
+                    title = cleanTitle,
+                    mediaLookupId = mediaLookupId,
+                    type = type,
+                    year = metaYear,
+                    season = season,
+                    episode = episode,
+                    onGroupLoaded = { group ->
+                        val nonTorrentStreams = group.streams.filterNot { it.isTorrentStream || !it.infoHash.isNullOrBlank() }
+                        publishStreamGroup(presentStreamGroup(group.copy(streams = nonTorrentStreams)))
+                    }
+                )
+            }
+
+            val pluginSemaphore = Semaphore(permits = 20)
             pluginProviderGroups.forEach { providerGroup ->
                 val includeScraperNameInSubtitle = false
                 providerGroup.scrapers.forEach { scraper ->
                     launch {
                         log.d { "fetch $panelName request=$requestKey plugin=${scraper.name}" }
-                        val completion = PluginRepository.executeScraper(
-                            scraper = scraper,
-                            tmdbId = pluginContentId(
-                                videoId = videoId,
-                                season = season,
-                                episode = episode,
-                            ),
-                            mediaType = type,
-                            season = season,
-                            episode = episode,
-                        ).fold(
-                            onSuccess = { results ->
-                                log.d { "fetched $panelName request=$requestKey plugin=${scraper.name} streams=${results.size}" }
-                                StreamLoadCompletion.PluginScraper(
-                                    addonId = providerGroup.addonId,
-                                    streams = results.map { result ->
-                                        result.toStreamItem(
-                                            scraper = scraper,
-                                            addonName = providerGroup.addonName,
-                                            addonId = providerGroup.addonId,
-                                            includeScraperNameInSubtitle = includeScraperNameInSubtitle,
-                                        )
-                                    },
-                                    error = null,
-                                )
-                            },
-                            onFailure = { error ->
-                                log.w(error) { "failed $panelName request=$requestKey plugin=${scraper.name}" }
-                                StreamLoadCompletion.PluginScraper(
+                        val completion = try {
+                            pluginSemaphore.withPermit {
+                                withTimeoutOrNull(25_000L) {
+                                    PluginRepository.executeScraper(
+                                        scraper = scraper,
+                                        tmdbId = pluginContentId(
+                                            videoId = videoId,
+                                            season = season,
+                                            episode = episode,
+                                        ),
+                                        mediaType = type,
+                                        season = season,
+                                        episode = episode,
+                                    ).fold(
+                                        onSuccess = { results ->
+                                            log.d { "fetched $panelName request=$requestKey plugin=${scraper.name} streams=${results.size}" }
+                                            val nonTorrentResults = results.filterNot { it.infoHash != null }
+                                            StreamLoadCompletion.PluginScraper(
+                                                addonId = providerGroup.addonId,
+                                                streams = nonTorrentResults.map { result ->
+                                                    result.toStreamItem(
+                                                        scraper = scraper,
+                                                        addonName = providerGroup.addonName,
+                                                        addonId = providerGroup.addonId,
+                                                        includeScraperNameInSubtitle = includeScraperNameInSubtitle,
+                                                    )
+                                                },
+                                                error = null,
+                                            )
+                                        },
+                                        onFailure = { error ->
+                                            log.w(error) { "failed $panelName request=$requestKey plugin=${scraper.name}" }
+                                            StreamLoadCompletion.PluginScraper(
+                                                addonId = providerGroup.addonId,
+                                                streams = emptyList(),
+                                                error = error.message ?: getString(Res.string.streams_failed_to_load_scraper, scraper.name),
+                                            )
+                                        },
+                                    )
+                                } ?: StreamLoadCompletion.PluginScraper(
                                     addonId = providerGroup.addonId,
                                     streams = emptyList(),
-                                    error = error.message ?: getString(Res.string.streams_failed_to_load_scraper, scraper.name),
+                                    error = "Scraper timed out",
                                 )
-                            },
-                        )
+                            }
+                        } catch (t: Throwable) {
+                            if (t is CancellationException) throw t
+                            StreamLoadCompletion.PluginScraper(
+                                addonId = providerGroup.addonId,
+                                streams = emptyList(),
+                                error = t.message ?: "Scraper failed",
+                            )
+                        }
                         publishCompletion(completion)
                     }
                 }
@@ -517,6 +613,16 @@ object PlayerStreamsRepository {
                                 installedOrder = installedAddonOrder,
                             )
                             val anyLoading = updated.any { it.isLoading }
+                            if (!anyLoading || updated.any { it.streams.isNotEmpty() }) {
+                                StreamSessionCache.put(
+                                    type = type,
+                                    videoId = videoId,
+                                    season = season,
+                                    episode = episode,
+                                    groups = updated,
+                                    isComplete = !anyLoading,
+                                )
+                            }
                             current.copy(
                                 groups = updated,
                                 isAnyLoading = anyLoading,
@@ -580,4 +686,3 @@ private fun StreamsUiState.streamDiagnostics(): String {
 
 private fun com.nuvio.app.features.addons.ManagedAddon.streamAddonInstanceId(manifestId: String): String =
     "addon:$manifestId:$manifestUrl"
-

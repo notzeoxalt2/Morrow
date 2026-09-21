@@ -1566,7 +1566,10 @@ button:disabled {
   height: 10px;
   border-radius: 999px;
   background:
-    linear-gradient(to right, var(--theme-timeline-fill) 0 var(--progress, 0%), var(--theme-timeline-track) var(--progress, 0%) 100%);
+    linear-gradient(to right,
+      var(--theme-timeline-fill) 0 var(--progress, 0%),
+      rgba(255, 255, 255, .45) var(--progress, 0%) var(--buffered, 0%),
+      var(--theme-timeline-track) var(--buffered, 0%) 100%);
 }
 
 .scrub::-webkit-slider-thumb {
@@ -1757,12 +1760,12 @@ button:disabled {
 }
 
 .action.playback-action {
-  background: var(--theme-accent);
-  color: var(--theme-on-accent);
+  background: transparent;
+  color: var(--theme-control-foreground);
 }
 
 .action.playback-action:hover {
-  background: var(--theme-accent-strong);
+  background: rgba(255, 255, 255, .15);
 }
 
 @media (min-width: 761px) {
@@ -1853,14 +1856,14 @@ button:disabled {
 
   .action.playback-action,
   .action.playback-action.focused {
-    background: var(--theme-accent);
-    color: var(--theme-on-accent);
+    background: transparent;
+    color: var(--theme-control-foreground);
   }
 
   .action.playback-action:hover,
   .action.playback-action.focused:hover {
-    background: var(--theme-accent-strong);
-    color: var(--theme-on-accent);
+    background: var(--theme-selected-surface-hover);
+    color: var(--theme-control-foreground);
     transform: translateZ(0) scale(1.04);
   }
 
