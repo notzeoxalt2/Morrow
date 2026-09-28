@@ -36,6 +36,18 @@ object StreamParser {
             val proxyHeaders = hintsObj
                 ?.objectValue("proxyHeaders")
                 ?.toProxyHeaders()
+            val subtitlesArray = (obj["subtitles"] as? JsonArray) ?: (obj["tracks"] as? JsonArray)
+            val externalSubtitles = subtitlesArray?.mapNotNull { subElem ->
+                val subObj = subElem as? JsonObject ?: return@mapNotNull null
+                val subUrl = subObj.string("url") ?: return@mapNotNull null
+                val lang = subObj.string("lang") ?: subObj.string("language") ?: "en"
+                val subName = subObj.string("name") ?: subObj.string("label") ?: lang
+                StreamSubtitle(
+                    url = subUrl,
+                    language = lang,
+                    name = subName,
+                )
+            }.orEmpty()
             StreamItem(
                 name = obj.string("name"),
                 title = obj.string("title"),
@@ -50,6 +62,7 @@ object StreamParser {
                 addonLogo = addonLogo,
                 streamType = normalizeStreamType(obj.string("type")),
                 clientResolve = clientResolve,
+                externalSubtitles = externalSubtitles,
                 behaviorHints = StreamBehaviorHints(
                     bingeGroup = hintsObj?.string("bingeGroup"),
                     notWebReady = (hintsObj?.boolean("notWebReady") ?: false) || proxyHeaders != null,
