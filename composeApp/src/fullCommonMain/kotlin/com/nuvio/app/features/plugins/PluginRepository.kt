@@ -702,7 +702,7 @@ actual object PluginRepository {
                     version = it.version,
                     scraperCount = it.scraperCount,
                     lastUpdated = it.lastUpdated,
-                    isRefreshing = it.scraperCount <= 0 || scrapers.none { s -> s.repositoryUrl == it.manifestUrl },
+                    isRefreshing = it.manifestUrl in defaultPluginRepoUrls || it.scraperCount <= 0 || scrapers.none { s -> s.repositoryUrl == it.manifestUrl },
                     errorMessage = null,
                 )
             } + missingDefaults

@@ -12,6 +12,7 @@ internal object JsBindings {
             if (typeof globalThis.self === 'undefined') globalThis.self = globalThis;
 
             ${fetchPolyfill()}
+            ${timerPolyfill()}
             ${abortControllerPolyfill()}
             ${base64Polyfill()}
             ${urlPolyfill()}
@@ -143,6 +144,21 @@ internal object JsBindings {
                 this.signal.dispatchEvent({ type: 'abort' });
             };
             globalThis.AbortController = AbortController;
+        }
+    """.trimIndent()
+
+    private fun timerPolyfill() = """
+        if (typeof setTimeout === 'undefined') {
+            globalThis.setTimeout = function(fn, delay) {
+                var timerId = Math.floor(Math.random() * 1000000);
+                Promise.resolve().then(function() {
+                    try { fn(); } catch(e) {}
+                });
+                return timerId;
+            };
+        }
+        if (typeof clearTimeout === 'undefined') {
+            globalThis.clearTimeout = function(id) {};
         }
     """.trimIndent()
 

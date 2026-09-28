@@ -275,7 +275,8 @@ object StreamsRepository {
 
         val isAnime = type.equals("anime", ignoreCase = true) ||
             videoId.startsWith("kitsu:") || videoId.startsWith("mal:") || videoId.startsWith("anilist:") ||
-            resolvedParentId.startsWith("kitsu:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("anilist:")
+            resolvedParentId.startsWith("kitsu:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("anilist:") ||
+            meta?.genres?.any { it.contains("anime", ignoreCase = true) || it.contains("animation", ignoreCase = true) } == true
 
         val offlineAnimeGroups = if (isAnime) {
             listOf(
