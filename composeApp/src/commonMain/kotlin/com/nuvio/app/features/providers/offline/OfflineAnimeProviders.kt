@@ -229,7 +229,8 @@ object OfflineAnimeProviders {
                     if (streams.isNotEmpty()) return streams
                 } catch (_: Throwable) {}
             }
-            return emptyList()
+            // Fallback: anidap.lol resolver (verified working)
+            return AnidapScraper.getStreams(title, episodeNumber, "HiAnime", "offline:hianime")
         }
     }
 
@@ -925,6 +926,146 @@ object OfflineAnimeProviders {
                             }
                         } catch (_: Throwable) {}
                     }
+                }
+            } catch (_: Throwable) {}
+            return streams
+        }
+    }
+
+    // ==========================================
+    // 11. Anidap Scraper (anidap.lol resolver - verified working)
+    // Powers: HiAnime fallback + standalone use
+    // ==========================================
+    private object AnidapScraper {
+        private const val RESOLVER = "https://anidap.lol"
+        private const val STREAM_API = "https://chad.anidap.lol/rest/api"
+        private val WORKING_SUB_SERVERS = listOf("zuna", "sora")
+        private val WORKING_DUB_SERVERS = listOf("sora", "zuna")
+
+        suspend fun getStreams(
+            title: String,
+            episodeNumber: Int,
+            addonName: String,
+            addonId: String,
+        ): List<StreamItem> {
+            val streams = mutableListOf<StreamItem>()
+            try {
+                val headers = mapOf(
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36",
+                    "Accept" to "application/json, text/plain, */*",
+                    "Origin" to RESOLVER,
+                    "Referer" to "$RESOLVER/",
+                )
+
+                // Search anidap.lol
+                val searchResp = httpGetTextWithHeaders(
+                    "$RESOLVER/api/anime/search?q=${title.encodeURLParameter()}",
+                    headers
+                )
+                val searchJson = json.parseToJsonElement(searchResp).jsonObject
+                val results = searchJson["results"]?.jsonArray.orEmpty()
+                if (results.isEmpty()) return emptyList()
+
+                // Find best match
+                val normTitle = title.lowercase().filter { it.isLetterOrDigit() || it == ' ' }.trim()
+                val match = results.firstOrNull { elem ->
+                    val t = elem.jsonObject["title"]?.jsonObject
+                    val romaji = t?.get("romaji")?.jsonPrimitive?.content?.lowercase()?.filter { it.isLetterOrDigit() || it == ' ' }?.trim() ?: ""
+                    val eng = t?.get("english")?.jsonPrimitive?.content?.lowercase()?.filter { it.isLetterOrDigit() || it == ' ' }?.trim() ?: ""
+                    romaji == normTitle || eng == normTitle ||
+                        romaji.contains(normTitle) || eng.contains(normTitle) ||
+                        normTitle.contains(romaji.take(8)) || normTitle.contains(eng.take(8))
+                }?.jsonObject ?: results.first().jsonObject
+
+                val animeSearchId = match["id"]?.jsonPrimitive?.content ?: return emptyList()
+
+                // Get detailed info with anidap slug
+                val detailResp = httpGetTextWithHeaders(
+                    "$RESOLVER/api/anime/${animeSearchId.encodeURLParameter()}",
+                    headers
+                )
+                val detailJson = json.parseToJsonElement(detailResp).jsonObject
+                val animeId = detailJson["data"]?.jsonObject?.get("id")?.jsonPrimitive?.content ?: return emptyList()
+
+                // Get server list
+                val serverResp = runCatching {
+                    httpGetTextWithHeaders(
+                        "$STREAM_API/servers?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber",
+                        headers
+                    )
+                }.getOrNull()
+                val serverJson = if (serverResp != null) json.parseToJsonElement(serverResp).jsonObject else null
+
+                val subServers = serverJson?.get("subProviders")?.jsonArray
+                    ?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.content }
+                    ?.filter { it in WORKING_SUB_SERVERS }
+                    ?: WORKING_SUB_SERVERS
+
+                val dubServers = serverJson?.get("dubProviders")?.jsonArray
+                    ?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.content }
+                    ?.filter { it in WORKING_DUB_SERVERS }
+                    ?: WORKING_DUB_SERVERS
+
+                // Fetch sub streams
+                for (serverId in subServers) {
+                    try {
+                        val srcResp = httpGetTextWithHeaders(
+                            "$STREAM_API/sources?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber&providerId=$serverId",
+                            headers
+                        )
+                        val srcJson = json.parseToJsonElement(srcResp).jsonObject
+                        val sources = srcJson["sources"]?.jsonArray.orEmpty()
+                        val tracks = srcJson["tracks"]?.jsonArray.orEmpty().mapNotNull { t ->
+                            val tObj = t.jsonObject
+                            val url = tObj["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                            val lang = tObj["lang"]?.jsonPrimitive?.content ?: tObj["label"]?.jsonPrimitive?.content ?: "en"
+                            if (lang.equals("Thumbnails", ignoreCase = true)) return@mapNotNull null
+                            StreamSubtitle(url = url, language = lang.take(2).lowercase(), name = tObj["label"]?.jsonPrimitive?.content ?: lang)
+                        }
+                        for (src in sources) {
+                            val srcObj = src.jsonObject
+                            val url = srcObj["url"]?.jsonPrimitive?.content ?: continue
+                            if (!url.startsWith("http")) continue
+                            streams.add(StreamItem(
+                                name = "$addonName · ${serverId.uppercase()} [SUB]",
+                                title = "$title - Ep $episodeNumber · ${serverId.uppercase()} [SUB] | 🇯🇵 Japanese Sub",
+                                description = "Server ${serverId.uppercase()} • Japanese Sub",
+                                url = url,
+                                addonName = addonName,
+                                addonId = addonId,
+                                streamType = if (url.contains(".m3u8")) "m3u8" else "mp4",
+                                externalSubtitles = tracks,
+                            ))
+                        }
+                    } catch (_: Throwable) {}
+                }
+
+                // Fetch dub streams
+                for (serverId in dubServers) {
+                    try {
+                        val srcResp = httpGetTextWithHeaders(
+                            "$STREAM_API/sources?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber&providerId=$serverId&isDub=true",
+                            headers
+                        )
+                        val srcJson = json.parseToJsonElement(srcResp).jsonObject
+                        val sources = srcJson["sources"]?.jsonArray.orEmpty()
+                        for (src in sources) {
+                            val srcObj = src.jsonObject
+                            val url = srcObj["url"]?.jsonPrimitive?.content ?: continue
+                            if (!url.startsWith("http")) continue
+                            // Don't duplicate same URLs
+                            if (streams.any { it.url == url && it.name?.contains("[SUB]") == true }) continue
+                            streams.add(StreamItem(
+                                name = "$addonName · ${serverId.uppercase()} [DUB]",
+                                title = "$title - Ep $episodeNumber · ${serverId.uppercase()} [DUB] | 🗣️ English Dub",
+                                description = "Server ${serverId.uppercase()} • English Dub",
+                                url = url,
+                                addonName = addonName,
+                                addonId = addonId,
+                                streamType = if (url.contains(".m3u8")) "m3u8" else "mp4",
+                            ))
+                        }
+                    } catch (_: Throwable) {}
                 }
             } catch (_: Throwable) {}
             return streams
