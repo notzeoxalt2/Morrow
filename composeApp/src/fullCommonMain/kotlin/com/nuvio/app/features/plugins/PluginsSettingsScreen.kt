@@ -105,13 +105,16 @@ fun PluginsSettingsPageContent(
     val repositoryNameByUrl = remember(sortedRepos) {
         sortedRepos.associate { it.manifestUrl to it.name }
     }
-    val sortedScrapers = remember(uiState.scrapers, repositoryNameByUrl) {
-        uiState.scrapers.sortedWith(
-            compareBy<PluginScraper>(
-                { repositoryNameByUrl[it.repositoryUrl]?.lowercase() ?: it.repositoryUrl.lowercase() },
-                { it.name.lowercase() },
-            ),
-        )
+    val sortedScrapers = remember(uiState.scrapers, repositoryNameByUrl, sortedRepos) {
+        val validUrls = sortedRepos.map { it.manifestUrl.lowercase() }.toSet()
+        uiState.scrapers
+            .filter { it.repositoryUrl.lowercase() in validUrls }
+            .sortedWith(
+                compareBy<PluginScraper>(
+                    { repositoryNameByUrl[it.repositoryUrl]?.lowercase() ?: it.repositoryUrl.lowercase() },
+                    { it.name.lowercase() },
+                ),
+            )
     }
 
     val repoFallbackLabel = stringResource(Res.string.plugins_repo_fallback_label)

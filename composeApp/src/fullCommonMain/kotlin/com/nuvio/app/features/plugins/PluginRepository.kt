@@ -208,9 +208,12 @@ actual object PluginRepository {
                 previousScrapers = previousById,
             )
             _uiState.update { state ->
+                val nextRepos = state.repositories + repo
+                val validUrls = nextRepos.map { it.manifestUrl.lowercase() }.toSet()
                 state.copy(
-                    repositories = state.repositories + repo,
-                    scrapers = state.scrapers.filterNot { it.repositoryUrl == manifestUrl } + scrapers,
+                    repositories = nextRepos,
+                    scrapers = (state.scrapers.filterNot { it.repositoryUrl.equals(manifestUrl, ignoreCase = true) } + scrapers)
+                        .filter { it.repositoryUrl.lowercase() in validUrls },
                 )
             }
             persist()
@@ -273,9 +276,11 @@ actual object PluginRepository {
                             val updatedRepos = state.repositories.map { existing ->
                                 if (existing.manifestUrl == manifestUrl) repo else existing
                             }
+                            val validUrls = updatedRepos.map { it.manifestUrl.lowercase() }.toSet()
                             state.copy(
                                 repositories = updatedRepos,
-                                scrapers = state.scrapers.filterNot { it.repositoryUrl == manifestUrl } + scrapers,
+                                scrapers = (state.scrapers.filterNot { it.repositoryUrl.equals(manifestUrl, ignoreCase = true) } + scrapers)
+                                    .filter { it.repositoryUrl.lowercase() in validUrls },
                             )
                         },
                         onFailure = { error ->
@@ -342,8 +347,9 @@ actual object PluginRepository {
     actual fun getEnabledScrapersForType(type: String): List<PluginScraper> {
         initialize()
         if (!_uiState.value.pluginsEnabled) return emptyList()
+        val installedUrls = _uiState.value.repositories.map { it.manifestUrl.lowercase() }.toSet()
         return _uiState.value.scrapers.filter { scraper ->
-            scraper.enabled && scraper.supportsType(type)
+            scraper.enabled && scraper.supportsType(type) && scraper.repositoryUrl.lowercase() in installedUrls
         }
     }
 
