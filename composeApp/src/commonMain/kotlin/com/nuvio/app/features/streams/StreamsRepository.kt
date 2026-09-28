@@ -281,38 +281,26 @@ object StreamsRepository {
         val offlineAnimeGroups = if (isAnime) {
             listOf(
                 AddonStreamGroup(
-                    addonName = "HiAnime",
-                    addonId = "offline:hianime",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AnimeLok",
-                    addonId = "offline:animelok",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "Senshi",
-                    addonId = "offline:senshi",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AniDB",
-                    addonId = "offline:anidb",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "Miruro",
-                    addonId = "offline:miruro",
+                    addonName = "Anikage",
+                    addonId = "offline:anikage",
                     streams = emptyList(),
                     isLoading = true,
                 ),
                 AddonStreamGroup(
                     addonName = "AnimeSalt",
                     addonId = "offline:animesalt",
+                    streams = emptyList(),
+                    isLoading = true,
+                ),
+                AddonStreamGroup(
+                    addonName = "HiAnime",
+                    addonId = "offline:hianime",
+                    streams = emptyList(),
+                    isLoading = true,
+                ),
+                AddonStreamGroup(
+                    addonName = "KissKH",
+                    addonId = "offline:kisskh",
                     streams = emptyList(),
                     isLoading = true,
                 ),

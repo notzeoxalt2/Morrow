@@ -643,7 +643,15 @@ actual object PluginRepository {
     private fun loadStateAsUiState(profileId: Int): LoadedPluginState {
         val stored = loadStoredState(profileId)
         var requiresMigration = false
-        val scrapers = stored?.scrapers
+        val legacyRepoUrls = setOf(
+            "https://raw.githubusercontent.com/notzeoxalt2/morrowx1movies/main/manifest.json",
+            "https://raw.githubusercontent.com/notzeoxalt2/Morrow/main/providers/manifest.json",
+            "https://raw.githubusercontent.com/D3adlyRocket/All-in-One-Nuvio/refs/heads/main/manifest.json",
+            "https://raw.githubusercontent.com/yoruix/nuvio-providers/refs/heads/main/manifest.json",
+            "https://raw.githubusercontent.com/Abinanthankv/NuvioRepo/refs/heads/master/manifest.json",
+            "https://raw.githubusercontent.com/michat88/nuvio-providers/refs/heads/main/manifest.json",
+        )
+        val rawScrapers = stored?.scrapers
             ?.mapNotNull { storedScraper ->
                 storedScraper.restorePluginScraper { scraperId ->
                     PluginStorage.loadScraperCode(profileId, scraperId)
@@ -652,17 +660,13 @@ actual object PluginRepository {
                 }?.scraper
             }
             ?: emptyList()
+        if (rawScrapers.any { it.repositoryUrl in legacyRepoUrls }) {
+            requiresMigration = true
+        }
+        val scrapers = rawScrapers.filterNot { it.repositoryUrl in legacyRepoUrls }
         val defaultPluginRepoUrls = listOf(
-            "https://raw.githubusercontent.com/notzeoxalt2/morrowx1movies/main/manifest.json",
             "https://raw.githubusercontent.com/notzeoxalt2/morrowx1anime/main/manifest.json",
             "https://raw.githubusercontent.com/notzeoxalt2/morrowx2anime/main/manifest.json",
-        )
-        val legacyRepoUrls = setOf(
-            "https://raw.githubusercontent.com/notzeoxalt2/Morrow/main/providers/manifest.json",
-            "https://raw.githubusercontent.com/D3adlyRocket/All-in-One-Nuvio/refs/heads/main/manifest.json",
-            "https://raw.githubusercontent.com/yoruix/nuvio-providers/refs/heads/main/manifest.json",
-            "https://raw.githubusercontent.com/Abinanthankv/NuvioRepo/refs/heads/master/manifest.json",
-            "https://raw.githubusercontent.com/michat88/nuvio-providers/refs/heads/main/manifest.json",
         )
         val storedRepos = stored?.repositories?.filterNot { it.manifestUrl in legacyRepoUrls }
         if (stored?.repositories?.any { it.manifestUrl in legacyRepoUrls } == true) {
