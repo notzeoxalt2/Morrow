@@ -570,21 +570,26 @@ internal fun AppGate(
                 }
                 ProfileSelectionScreen(
                     onProfileSelected = { profile ->
-                        if (
-                            !profileSelectionLoading &&
-                            (autoSkipProfileSelection || profile.profileIndex != ProfileRepository.state.value.activeProfile?.profileIndex)
-                        ) {
-                            profileSelectionLoading = true
-                            profileSelectionTransitionActive = true
-                            skipProfileSelectionEnterAnimation = false
-                            gateScope.launch {
-                                selectProfile(
-                                    profile = profile,
-                                    sync = authState is AuthState.Authenticated,
-                                )
+                        if (!profileSelectionLoading) {
+                            if (profile.profileIndex == ProfileRepository.state.value.activeProfile?.profileIndex) {
+                                skipProfileSelectionEnterAnimation = false
                                 gateScreen = AppGateScreen.Main.name
                                 if (!renderMainContent) {
                                     onActivate?.invoke(AppScreenTab.Home)
+                                }
+                            } else {
+                                profileSelectionLoading = true
+                                profileSelectionTransitionActive = true
+                                skipProfileSelectionEnterAnimation = false
+                                gateScope.launch {
+                                    selectProfile(
+                                        profile = profile,
+                                        sync = authState is AuthState.Authenticated,
+                                    )
+                                    gateScreen = AppGateScreen.Main.name
+                                    if (!renderMainContent) {
+                                        onActivate?.invoke(AppScreenTab.Home)
+                                    }
                                 }
                             }
                         }

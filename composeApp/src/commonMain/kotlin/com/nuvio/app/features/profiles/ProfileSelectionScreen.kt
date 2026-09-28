@@ -66,7 +66,6 @@ import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioToastHost
-import com.nuvio.app.features.anime.AnimeModePreference
 import com.nuvio.app.features.membership.CosmeticEntitlement
 import com.nuvio.app.features.settings.MemberBrandWordmark
 import kotlinx.coroutines.delay
@@ -89,7 +88,6 @@ fun ProfileSelectionScreen(
     val scope = rememberCoroutineScope()
     var pinDialogProfile by remember { mutableStateOf<NuvioProfile?>(null) }
     var isEditMode by remember { mutableStateOf(false) }
-    var isAnimeMode by remember { mutableStateOf(AnimeModePreference.isAnimeMode.value) }
     var hoveredProfileIndex by remember { mutableStateOf<Int?>(null) }
 
     val titleAlpha = remember { Animatable(0f) }
@@ -102,7 +100,7 @@ fun ProfileSelectionScreen(
                 isEditMode = isEditMode,
                 activeProfileIndex = activeProfileIndex,
                 onEditProfile = onEditProfile,
-                onActiveProfileSelected = { scope.launch { showAlreadyActiveProfileToast(it) } },
+                onActiveProfileSelected = onProfileSelected,
                 onPinRequired = { pinDialogProfile = it },
                 onProfileSelected = onProfileSelected,
             )
@@ -321,34 +319,6 @@ fun ProfileSelectionScreen(
                             },
                             style = MaterialTheme.typography.bodyLarge,
                             color = if (isEditMode) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(
-                                if (isAnimeMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-                                else Color.Transparent,
-                            )
-                            .border(
-                                width = 1.dp,
-                                color = if (isAnimeMode) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                                shape = RoundedCornerShape(24.dp),
-                            )
-                            .clickable(enabled = interactionEnabled) {
-                                isAnimeMode = !isAnimeMode
-                                AnimeModePreference.setAnimeMode(isAnimeMode)
-                            }
-                            .padding(horizontal = 24.dp, vertical = 10.dp),
-                    ) {
-                        Text(
-                            text = if (isAnimeMode) "🎌 Anime Mode Active" else "🎌 Anime Mode",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (isAnimeMode) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.SemiBold,
                         )

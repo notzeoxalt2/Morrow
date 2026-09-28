@@ -506,8 +506,13 @@ actual object PluginRepository {
         val platformTags = currentPluginPlatformTags().map { it.lowercase() }.toSet()
         val supported = supportedPlatforms?.map { it.lowercase() }?.toSet().orEmpty()
         val disabled = disabledPlatforms?.map { it.lowercase() }?.toSet().orEmpty()
-        if (supported.isNotEmpty() && platformTags.none { it in supported }) return false
         if (platformTags.any { it in disabled }) return false
+        if (supported.isNotEmpty() && platformTags.none { it in supported }) {
+            if (platformTags.contains("desktop") || platformTags.contains("windows") || platformTags.contains("jvm")) {
+                return true
+            }
+            return false
+        }
         return true
     }
 
@@ -648,28 +653,34 @@ actual object PluginRepository {
             }
             ?: emptyList()
         val defaultPluginRepoUrls = listOf(
+            "https://raw.githubusercontent.com/notzeoxalt2/morrowx1movies/main/manifest.json",
+            "https://raw.githubusercontent.com/notzeoxalt2/morrowx1anime/main/manifest.json",
+            "https://raw.githubusercontent.com/notzeoxalt2/morrowx2anime/main/manifest.json",
+        )
+        val legacyRepoUrls = setOf(
             "https://raw.githubusercontent.com/notzeoxalt2/Morrow/main/providers/manifest.json",
             "https://raw.githubusercontent.com/D3adlyRocket/All-in-One-Nuvio/refs/heads/main/manifest.json",
             "https://raw.githubusercontent.com/yoruix/nuvio-providers/refs/heads/main/manifest.json",
             "https://raw.githubusercontent.com/Abinanthankv/NuvioRepo/refs/heads/master/manifest.json",
             "https://raw.githubusercontent.com/michat88/nuvio-providers/refs/heads/main/manifest.json",
         )
-        val storedRepos = stored?.repositories
+        val storedRepos = stored?.repositories?.filterNot { it.manifestUrl in legacyRepoUrls }
+        if (stored?.repositories?.any { it.manifestUrl in legacyRepoUrls } == true) {
+            requiresMigration = true
+        }
         val existingUrls = storedRepos?.map { it.manifestUrl }?.toSet().orEmpty()
         val missingDefaults = defaultPluginRepoUrls.filterNot { it in existingUrls }.map { url ->
             requiresMigration = true
             PluginRepositoryItem(
                 manifestUrl = url,
                 name = when {
-                    url.contains("notzeoxalt2/Morrow") -> "AnimeByMorrow (Requested Sites)"
-                    url.contains("D3adlyRocket") -> "All-in-One Providers"
-                    url.contains("yoruix") -> "Yoruix Anime & Media"
-                    url.contains("Abinanthankv") -> "Nuvio Main Repo"
-                    url.contains("michat88") -> "Michat88 KDrama & Media"
+                    url.contains("morrowx1movies") -> "Morrow Movies & TV"
+                    url.contains("morrowx1anime") -> "Morrow Anime 1 - Core"
+                    url.contains("morrowx2anime") -> "Morrow Anime 2 - Regional & Dub"
                     else -> url.substringBefore("?").substringAfterLast('/')
                 },
                 description = "Pre-installed native provider scrapers",
-                version = "1.0.0",
+                version = "1.2.0",
                 isRefreshing = true,
             )
         }
@@ -681,7 +692,12 @@ actual object PluginRepository {
             storedRepos.map {
                 PluginRepositoryItem(
                     manifestUrl = it.manifestUrl,
-                    name = it.name,
+                    name = when {
+                        it.manifestUrl.contains("morrowx1movies") -> "Morrow Movies & TV"
+                        it.manifestUrl.contains("morrowx1anime") -> "Morrow Anime 1 - Core"
+                        it.manifestUrl.contains("morrowx2anime") -> "Morrow Anime 2 - Regional & Dub"
+                        else -> it.name
+                    },
                     description = it.description,
                     version = it.version,
                     scraperCount = it.scraperCount,

@@ -613,14 +613,14 @@ object StreamsRepository {
                 }
             }
 
-            val pluginSemaphore = Semaphore(permits = 20)
+            val pluginSemaphore = Semaphore(permits = 30)
             pluginProviderGroups.forEach { providerGroup ->
                 val includeScraperNameInSubtitle = false
                 providerGroup.scrapers.forEach { scraper ->
                     launch {
                         val completion = try {
                             pluginSemaphore.withPermit {
-                                withTimeoutOrNull(25_000L) {
+                                withTimeoutOrNull(12_000L) {
                                     val targetContentId = pluginContentId(
                                         videoId = videoId,
                                         season = season,

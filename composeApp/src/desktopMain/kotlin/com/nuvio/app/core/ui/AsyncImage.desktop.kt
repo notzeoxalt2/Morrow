@@ -60,17 +60,8 @@ internal actual fun NuvioAsyncImage(
     clipToBounds: Boolean,
     desktopImageScaling: NuvioDesktopImageScaling,
 ) {
-    val context = LocalPlatformContext.current
-    val effectiveDesktopImageScaling = remember(desktopImageScaling) {
-        if (IsWindowsDesktop) desktopImageScaling else NuvioDesktopImageScaling.Disabled
-    }
-    val requestModel = remember(context, model, effectiveDesktopImageScaling) {
-        if (effectiveDesktopImageScaling == NuvioDesktopImageScaling.Disabled) {
-            model
-        } else {
-            model.withDesktopHighQualitySize(context)
-        }
-    }
+    val effectiveDesktopImageScaling = NuvioDesktopImageScaling.Disabled
+    val requestModel = model
     val transform: (AsyncImagePainter.State) -> AsyncImagePainter.State = remember(
         placeholder,
         error,
