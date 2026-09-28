@@ -655,7 +655,6 @@ actual object PluginRepository {
         val stored = loadStoredState(profileId)
         var requiresMigration = false
         val legacyRepoUrls = setOf(
-            "https://raw.githubusercontent.com/notzeoxalt2/morrowx1movies/main/manifest.json",
             "https://raw.githubusercontent.com/notzeoxalt2/Morrow/main/providers/manifest.json",
             "https://raw.githubusercontent.com/D3adlyRocket/All-in-One-Nuvio/refs/heads/main/manifest.json",
             "https://raw.githubusercontent.com/yoruix/nuvio-providers/refs/heads/main/manifest.json",
@@ -676,6 +675,7 @@ actual object PluginRepository {
         }
         val scrapers = rawScrapers.filterNot { it.repositoryUrl in legacyRepoUrls }
         val defaultPluginRepoUrls = listOf(
+            "https://raw.githubusercontent.com/notzeoxalt2/morrowx1movies/main/manifest.json",
             "https://raw.githubusercontent.com/notzeoxalt2/morrowx1anime/main/manifest.json",
             "https://raw.githubusercontent.com/notzeoxalt2/morrowx2anime/main/manifest.json",
         )

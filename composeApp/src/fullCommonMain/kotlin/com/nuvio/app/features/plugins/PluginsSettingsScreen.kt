@@ -262,10 +262,11 @@ fun PluginsSettingsPageContent(
                 )
                 Spacer(modifier = Modifier.height(14.dp))
                 NuvioPrimaryButton(
-                    text = "Install Morrow Anime Repositories",
+                    text = "Install Morrow Providers",
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         coroutineScope.launch {
+                            PluginRepository.addRepository("https://raw.githubusercontent.com/notzeoxalt2/morrowx1movies/main/manifest.json")
                             PluginRepository.addRepository("https://raw.githubusercontent.com/notzeoxalt2/morrowx1anime/main/manifest.json")
                             PluginRepository.addRepository("https://raw.githubusercontent.com/notzeoxalt2/morrowx2anime/main/manifest.json")
                         }
