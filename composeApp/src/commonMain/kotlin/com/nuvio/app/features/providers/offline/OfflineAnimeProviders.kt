@@ -598,7 +598,10 @@ object OfflineAnimeProviders {
                     val plyrMatch = Regex("""multi-lang-plyr\.php\?data=([^"'\s&]+)""").find(epHtml)
                     if (plyrMatch != null) {
                         val decodedJson = decodeBase64(plyrMatch.groupValues[1])
-                        val items = json.parseToJsonElement(decodedJson).jsonArray
+                        val start = decodedJson.indexOf('[')
+                        val end = decodedJson.lastIndexOf(']')
+                        val cleanJson = if (start != -1 && end != -1) decodedJson.substring(start, end + 1) else decodedJson
+                        val items = json.parseToJsonElement(cleanJson).jsonArray
 
                         for (itemElem in items) {
                             val item = itemElem.jsonObject
