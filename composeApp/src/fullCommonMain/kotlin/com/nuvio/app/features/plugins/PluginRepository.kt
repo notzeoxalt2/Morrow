@@ -93,6 +93,15 @@ actual object PluginRepository {
         val effectiveProfileId = resolveEffectiveProfileId(ProfileRepository.activeProfileId)
         val shouldRefreshStoredRepos = !initialized || currentProfileId != effectiveProfileId
         ensureStateLoadedForProfile(effectiveProfileId)
+
+        val installedUrls = _uiState.value.repositories.map { it.manifestUrl.lowercase() }.toSet()
+        if (_uiState.value.scrapers.any { it.repositoryUrl.lowercase() !in installedUrls }) {
+            _uiState.update { state ->
+                state.copy(scrapers = state.scrapers.filter { it.repositoryUrl.lowercase() in installedUrls })
+            }
+            persist()
+        }
+
         if (!shouldRefreshStoredRepos) return
 
         val state = _uiState.value
@@ -215,9 +224,11 @@ actual object PluginRepository {
     actual fun removeRepository(manifestUrl: String) {
         initialize()
         _uiState.update { state ->
+            val remainingRepos = state.repositories.filterNot { it.manifestUrl == manifestUrl }
+            val remainingUrls = remainingRepos.map { it.manifestUrl.lowercase() }.toSet()
             state.copy(
-                repositories = state.repositories.filterNot { it.manifestUrl == manifestUrl },
-                scrapers = state.scrapers.filterNot { it.repositoryUrl == manifestUrl },
+                repositories = remainingRepos,
+                scrapers = state.scrapers.filter { it.repositoryUrl.lowercase() in remainingUrls },
             )
         }
         persist()
@@ -711,12 +722,19 @@ actual object PluginRepository {
                 )
             } + missingDefaults
         }
+
+        val validRepoUrls = repositories.map { it.manifestUrl.lowercase() }.toSet()
+        val finalScrapers = scrapers.filter { it.repositoryUrl.lowercase() in validRepoUrls }
+        if (finalScrapers.size != scrapers.size) {
+            requiresMigration = true
+        }
+
         return LoadedPluginState(
             state = PluginsUiState(
                 pluginsEnabled = stored?.pluginsEnabled ?: true,
                 groupStreamsByRepository = stored?.groupStreamsByRepository ?: false,
                 repositories = repositories,
-                scrapers = scrapers,
+                scrapers = finalScrapers,
             ),
             requiresMigration = requiresMigration,
         )
