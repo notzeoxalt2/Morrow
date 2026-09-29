@@ -13,6 +13,7 @@ import com.nuvio.app.features.streams.StreamSubtitle
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -104,7 +105,7 @@ object OfflineAnimeProviders {
         // 3. HiAnime (Starts immediately)
         val j3 = launch {
             val streams = runCatching {
-                withTimeoutOrNull(6_000L) {
+                withTimeoutOrNull(12_000L) {
                     HiAnimeScraper.getStreams(cleanTitle, epNum)
                 } ?: emptyList()
             }.getOrElse { e ->
@@ -598,52 +599,49 @@ object OfflineAnimeProviders {
                 }
 
                 if (epHtml != null) {
-                    val plyrMatch = Regex("""multi-lang-plyr\.php\?data=([^"'\s&]+)""").find(epHtml)
-                    if (plyrMatch != null) {
-                        val decodedJson = decodeBase64(plyrMatch.groupValues[1])
-                        val start = decodedJson.indexOf('[')
-                        val end = decodedJson.lastIndexOf(']')
-                        val cleanJson = if (start != -1 && end != -1) decodedJson.substring(start, end + 1) else decodedJson
-                        val items = json.parseToJsonElement(cleanJson).jsonArray
+                    val serverBtns = Regex("""<div class="server-btn[^"]*"[^>]*onclick="changeServer\((\d+)\)"[^>]*>\s*<div class="server-name">([^<]+)</div>\s*<div class="server-info">([^<]+)</div>""").findAll(epHtml).toList()
+                    val iframes = Regex("""<iframe[^>]+src=["']([^"']+)["']""").findAll(epHtml).map { it.groupValues[1] }.toList()
 
-                        val multiPlyrUrl = "https://animesalt.cx/multi-lang-plyr.php?data=${plyrMatch.groupValues[1]}"
-                        streams.add(
-                            StreamItem(
-                                name = "Multi-Audio Player",
-                                title = "$clean - Ep $episodeNumber · Multi-Audio Player [All Languages]",
-                                description = "AnimeSalt Official Multi-Language Player with Audio Switcher",
-                                url = multiPlyrUrl,
-                                addonName = "AnimeSalt",
-                                addonId = "offline:animesalt",
-                                streamType = "embed",
-                                behaviorHints = StreamBehaviorHints(
-                                    proxyHeaders = StreamProxyHeaders(
-                                        request = mapOf(
-                                            "Referer" to "$BASE/",
-                                            "User-Agent" to "Mozilla/5.0"
+                    if (serverBtns.isNotEmpty() && iframes.isNotEmpty()) {
+                        for (btn in serverBtns) {
+                            val idx = btn.groupValues[1].toIntOrNull() ?: continue
+                            val serverName = btn.groupValues[2].trim()
+                            val serverInfo = btn.groupValues[3].trim()
+                            val iframeUrl = iframes.getOrNull(idx) ?: continue
+                            val isMulti = iframeUrl.contains("multi-lang-plyr")
+                            val label = "$serverName · $serverInfo" + if (isMulti) " [Multi-Audio]" else ""
+                            streams.add(
+                                StreamItem(
+                                    name = label,
+                                    title = "$clean - Ep $episodeNumber · $label",
+                                    description = "AnimeSalt • $serverName ($serverInfo)" + if (isMulti) " • Audio Switcher" else "",
+                                    url = iframeUrl,
+                                    addonName = "AnimeSalt",
+                                    addonId = "offline:animesalt",
+                                    streamType = "embed",
+                                    behaviorHints = StreamBehaviorHints(
+                                        proxyHeaders = StreamProxyHeaders(
+                                            request = mapOf(
+                                                "Referer" to "$BASE/",
+                                                "User-Agent" to "Mozilla/5.0"
+                                            )
                                         )
                                     )
                                 )
                             )
-                        )
+                        }
+                    }
 
-                        for (itemElem in items) {
-                            val item = itemElem.jsonObject
-                            val lang = item["language"]?.jsonPrimitive?.content ?: "English"
-                            val link = item["link"]?.jsonPrimitive?.content ?: continue
-                            val isJapanese = lang.equals("japanese", ignoreCase = true)
-                            val isEnglish = lang.equals("english", ignoreCase = true)
-                            if (!isJapanese && !isEnglish) continue
-
-                            val tag = if (isJapanese) "[SUB]" else "[DUB]"
-                            val langDisplay = if (isJapanese) "🇯🇵 Japanese Sub" else "🗣️ English Dub"
-
+                    if (streams.isEmpty()) {
+                        val plyrMatch = Regex("""multi-lang-plyr\.php\?data=([^"'\s&]+)""").find(epHtml)
+                        if (plyrMatch != null) {
+                            val multiPlyrUrl = "https://animesalt.cx/as-cdn/clone/multi-lang-plyr.php?data=${plyrMatch.groupValues[1]}"
                             streams.add(
                                 StreamItem(
-                                    name = "$lang $tag",
-                                    title = "$clean - Ep $episodeNumber · $lang $tag | $langDisplay",
-                                    description = "AnimeSalt • $langDisplay",
-                                    url = link,
+                                    name = "SERVER 1 · Abyss [Multi-Audio]",
+                                    title = "$clean - Ep $episodeNumber · SERVER 1 · Abyss [Multi-Audio]",
+                                    description = "AnimeSalt Official Multi-Language Player with Audio Switcher",
+                                    url = multiPlyrUrl,
                                     addonName = "AnimeSalt",
                                     addonId = "offline:animesalt",
                                     streamType = "embed",
@@ -888,77 +886,97 @@ object OfflineAnimeProviders {
 
                 val slug = animeObj["slug"]?.jsonPrimitive?.content ?: return emptyList()
 
-                val serversUrl = "$BASE/api/media/anime/$slug/episodes/$episodeNumber/servers"
-                val serversResp = httpGetTextWithHeaders(serversUrl, mapOf("User-Agent" to "Mozilla/5.0", "Accept" to "application/json"))
-                val serversJson = json.parseToJsonElement(serversResp).jsonObject
-                val serverList = serversJson["servers"]?.jsonArray.orEmpty()
+                coroutineScope {
+                    val subDeferred = async {
+                        fetchSources(clean, slug, episodeNumber, "koto", "sub")
+                            ?: fetchSources(clean, slug, episodeNumber, "kiwi", "sub")
+                    }
+                    val dubDeferred = async {
+                        fetchSources(clean, slug, episodeNumber, "kiwi", "dub")
+                            ?: fetchSources(clean, slug, episodeNumber, "wave", "dub")
+                            ?: fetchSources(clean, slug, episodeNumber, "dib", "dub")
+                    }
+                    val subItems = subDeferred.await().orEmpty()
+                    val dubItems = dubDeferred.await().orEmpty()
 
-                val priorityServers = listOf("koto", "megg")
-                for (sId in priorityServers) {
-                    val sInfo = serverList.firstOrNull { it.jsonObject["id"]?.jsonPrimitive?.content == sId }?.jsonObject
-                    val subTypes = sInfo?.get("subTypes")?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: listOf("sub", "dub")
-
-                    for (subType in subTypes) {
-                        try {
-                            val srcUrl = "$BASE/api/media/anime/$slug/episodes/$episodeNumber/sources?provider=$sId&type=$subType"
-                            val srcResp = httpGetTextWithHeaders(
-                                srcUrl,
-                                mapOf(
-                                    "User-Agent" to "Mozilla/5.0",
-                                    "Referer" to "$BASE/watch/$slug?ep=$episodeNumber",
-                                    "Origin" to BASE
-                                )
-                            )
-                            val srcJson = json.parseToJsonElement(srcResp).jsonObject
-                            val sources = srcJson["sources"]?.jsonArray.orEmpty()
-                            val subtitles = srcJson["subtitles"]?.jsonArray.orEmpty().mapNotNull { subElem ->
-                                val sub = subElem.jsonObject
-                                val file = sub["file"]?.jsonPrimitive?.content
-                                val embed = sub["embedUrl"]?.jsonPrimitive?.content
-                                val subFileUrl = if (!file.isNullOrBlank()) "https://og.bakayaro.live/m3u8/$file" else embed
-                                val label = sub["label"]?.jsonPrimitive?.content ?: "English"
-                                if (subFileUrl != null) StreamSubtitle(url = subFileUrl, language = label, name = label) else null
-                            }
-
-                            val serverName = sId.replaceFirstChar { it.uppercase() }
-                            val isDub = subType == "dub"
-                            val typeTag = if (isDub) "[DUB]" else "[SUB]"
-                            val langDisplay = if (isDub) "🗣️ English Dub" else "🇯🇵 Japanese Sub"
-
-                            for (srcElem in sources) {
-                                val src = srcElem.jsonObject
-                                val rawUrl = src["url"]?.jsonPrimitive?.content ?: continue
-                                val isM3u8 = src["isM3U8"]?.jsonPrimitive?.booleanOrNull ?: true
-                                val quality = src["quality"]?.jsonPrimitive?.content ?: src["label"]?.jsonPrimitive?.content ?: "1080p"
-                                val streamUrl = "https://og.bakayaro.live/${if (isM3u8) "m3u8" else "stream"}/$rawUrl"
-
-                                streams.add(
-                                    StreamItem(
-                                        name = "Server $serverName $typeTag",
-                                        title = "$clean - Ep $episodeNumber · $serverName $typeTag | $langDisplay ($quality)",
-                                        description = "Anikage • $serverName $typeTag • $quality",
-                                        url = streamUrl,
-                                        addonName = "Anikage",
-                                        addonId = "offline:anikage",
-                                        streamType = if (isM3u8) "m3u8" else "mp4",
-                                        externalSubtitles = subtitles,
-                                        behaviorHints = StreamBehaviorHints(
-                                            proxyHeaders = StreamProxyHeaders(
-                                                request = mapOf(
-                                                    "Referer" to "$BASE/",
-                                                    "Origin" to BASE,
-                                                    "User-Agent" to "Mozilla/5.0"
-                                                )
-                                            )
-                                        )
-                                    )
-                                )
-                            }
-                        } catch (_: Throwable) {}
+                    streams.addAll(subItems)
+                    val subUrls = subItems.map { it.url }.toSet()
+                    for (dub in dubItems) {
+                        if (dub.url !in subUrls) {
+                            streams.add(dub)
+                        }
                     }
                 }
             } catch (_: Throwable) {}
             return streams
+        }
+
+        private suspend fun fetchSources(
+            clean: String,
+            slug: String,
+            episodeNumber: Int,
+            provider: String,
+            type: String
+        ): List<StreamItem>? {
+            return try {
+                val srcUrl = "$BASE/api/media/anime/$slug/episodes/$episodeNumber/sources?provider=$provider&type=$type"
+                val srcResp = httpGetTextWithHeaders(
+                    srcUrl,
+                    mapOf(
+                        "User-Agent" to "Mozilla/5.0",
+                        "Referer" to "$BASE/watch/$slug?ep=$episodeNumber",
+                        "Origin" to BASE
+                    )
+                )
+                val srcJson = json.parseToJsonElement(srcResp).jsonObject
+                val sources = srcJson["sources"]?.jsonArray.orEmpty()
+                if (sources.isEmpty()) return null
+
+                val subtitles = srcJson["subtitles"]?.jsonArray.orEmpty().mapNotNull { subElem ->
+                    val sub = subElem.jsonObject
+                    val file = sub["file"]?.jsonPrimitive?.content
+                    val embed = sub["embedUrl"]?.jsonPrimitive?.content
+                    val subFileUrl = if (!file.isNullOrBlank()) "https://og.bakayaro.live/m3u8/$file" else embed
+                    val label = sub["label"]?.jsonPrimitive?.content ?: "English"
+                    if (subFileUrl != null) StreamSubtitle(url = subFileUrl, language = label, name = label) else null
+                }
+
+                val serverName = provider.replaceFirstChar { it.uppercase() }
+                val isDub = type == "dub"
+                val typeTag = if (isDub) "[DUB]" else "[SUB]"
+                val langDisplay = if (isDub) "🗣️ English Dub" else "🇯🇵 Japanese Sub"
+
+                val items = sources.mapNotNull { srcElem ->
+                    val src = srcElem.jsonObject
+                    val rawUrl = src["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    val isM3u8 = src["isM3U8"]?.jsonPrimitive?.booleanOrNull ?: true
+                    val quality = src["quality"]?.jsonPrimitive?.content ?: src["label"]?.jsonPrimitive?.content ?: "1080p"
+                    val streamUrl = "https://og.bakayaro.live/${if (isM3u8) "m3u8" else "stream"}/$rawUrl"
+
+                    StreamItem(
+                        name = "Server $serverName $typeTag",
+                        title = "$clean - Ep $episodeNumber · $serverName $typeTag | $langDisplay ($quality)",
+                        description = "Anikage • $serverName $typeTag • $quality",
+                        url = streamUrl,
+                        addonName = "Anikage",
+                        addonId = "offline:anikage",
+                        streamType = if (isM3u8) "m3u8" else "mp4",
+                        externalSubtitles = subtitles,
+                        behaviorHints = StreamBehaviorHints(
+                            proxyHeaders = StreamProxyHeaders(
+                                request = mapOf(
+                                    "Referer" to "$BASE/",
+                                    "Origin" to BASE,
+                                    "User-Agent" to "Mozilla/5.0"
+                                )
+                            )
+                        )
+                    )
+                }
+                items.ifEmpty { null }
+            } catch (_: Throwable) {
+                null
+            }
         }
     }
 
@@ -1036,78 +1054,94 @@ object OfflineAnimeProviders {
                     ?.filter { it in WORKING_DUB_SERVERS }
                     ?: WORKING_DUB_SERVERS
 
-                // Fetch sub streams
-                for (serverId in subServers) {
-                    try {
-                        val srcResp = httpGetTextWithHeaders(
-                            "$STREAM_API/sources?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber&providerId=$serverId",
-                            headers
-                        )
-                        val srcJson = json.parseToJsonElement(srcResp).jsonObject
-                        val sources = srcJson["sources"]?.jsonArray.orEmpty()
-                        val streamHeaders = extractProxyHeaders(srcJson)
-                        val tracks = srcJson["tracks"]?.jsonArray.orEmpty().mapNotNull { t ->
-                            val tObj = t.jsonObject
-                            val url = tObj["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                            val lang = tObj["lang"]?.jsonPrimitive?.content ?: tObj["label"]?.jsonPrimitive?.content ?: "en"
-                            if (lang.equals("Thumbnails", ignoreCase = true)) return@mapNotNull null
-                            StreamSubtitle(url = url, language = lang.take(2).lowercase(), name = tObj["label"]?.jsonPrimitive?.content ?: lang)
-                        }
-                        for (src in sources) {
-                            val srcObj = src.jsonObject
-                            val url = srcObj["url"]?.jsonPrimitive?.content ?: continue
-                            if (!url.startsWith("http")) continue
-                            streams.add(StreamItem(
-                                name = "$addonName · ${serverId.uppercase()} [SUB]",
-                                title = "$title - Ep $episodeNumber · ${serverId.uppercase()} [SUB] | 🇯🇵 Japanese Sub",
-                                description = "Server ${serverId.uppercase()} • Japanese Sub",
-                                url = url,
-                                addonName = addonName,
-                                addonId = addonId,
-                                streamType = if (url.contains(".m3u8")) "m3u8" else "mp4",
-                                behaviorHints = StreamBehaviorHints(
-                                    proxyHeaders = StreamProxyHeaders(
-                                        request = streamHeaders
+                coroutineScope {
+                    val subJobs = subServers.take(2).map { serverId ->
+                        async {
+                            runCatching {
+                                val srcResp = httpGetTextWithHeaders(
+                                    "$STREAM_API/sources?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber&providerId=$serverId",
+                                    headers
+                                )
+                                val srcJson = json.parseToJsonElement(srcResp).jsonObject
+                                val sources = srcJson["sources"]?.jsonArray.orEmpty()
+                                val streamHeaders = extractProxyHeaders(srcJson)
+                                val tracks = srcJson["tracks"]?.jsonArray.orEmpty().mapNotNull { t ->
+                                    val tObj = t.jsonObject
+                                    val url = tObj["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                                    val lang = tObj["lang"]?.jsonPrimitive?.content ?: tObj["label"]?.jsonPrimitive?.content ?: "en"
+                                    if (lang.equals("Thumbnails", ignoreCase = true)) return@mapNotNull null
+                                    StreamSubtitle(url = url, language = lang.take(2).lowercase(), name = tObj["label"]?.jsonPrimitive?.content ?: lang)
+                                }
+                                sources.mapNotNull { src ->
+                                    val srcObj = src.jsonObject
+                                    val url = srcObj["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                                    if (!url.startsWith("http")) return@mapNotNull null
+                                    StreamItem(
+                                        name = "$addonName · ${serverId.uppercase()} [SUB]",
+                                        title = "$title - Ep $episodeNumber · ${serverId.uppercase()} [SUB] | 🇯🇵 Japanese Sub",
+                                        description = "Server ${serverId.uppercase()} • Japanese Sub",
+                                        url = url,
+                                        addonName = addonName,
+                                        addonId = addonId,
+                                        streamType = if (url.contains(".m3u8")) "m3u8" else "mp4",
+                                        behaviorHints = StreamBehaviorHints(
+                                            proxyHeaders = StreamProxyHeaders(
+                                                request = streamHeaders
+                                            )
+                                        ),
+                                        externalSubtitles = tracks,
                                     )
-                                ),
-                                externalSubtitles = tracks,
-                            ))
+                                }
+                            }.getOrDefault(emptyList())
                         }
-                    } catch (_: Throwable) {}
-                }
+                    }
 
-                // Fetch dub streams
-                for (serverId in dubServers) {
-                    try {
-                        val srcResp = httpGetTextWithHeaders(
-                            "$STREAM_API/sources?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber&providerId=$serverId&isDub=true",
-                            headers
-                        )
-                        val srcJson = json.parseToJsonElement(srcResp).jsonObject
-                        val sources = srcJson["sources"]?.jsonArray.orEmpty()
-                        val streamHeaders = extractProxyHeaders(srcJson)
-                        for (src in sources) {
-                            val srcObj = src.jsonObject
-                            val url = srcObj["url"]?.jsonPrimitive?.content ?: continue
-                            if (!url.startsWith("http")) continue
-                            // Don't duplicate same URLs
-                            if (streams.any { it.url == url && it.name?.contains("[SUB]") == true }) continue
-                            streams.add(StreamItem(
-                                name = "$addonName · ${serverId.uppercase()} [DUB]",
-                                title = "$title - Ep $episodeNumber · ${serverId.uppercase()} [DUB] | 🗣️ English Dub",
-                                description = "Server ${serverId.uppercase()} • English Dub",
-                                url = url,
-                                addonName = addonName,
-                                addonId = addonId,
-                                streamType = if (url.contains(".m3u8")) "m3u8" else "mp4",
-                                behaviorHints = StreamBehaviorHints(
-                                    proxyHeaders = StreamProxyHeaders(
-                                        request = streamHeaders
+                    val dubJobs = dubServers.take(2).map { serverId ->
+                        async {
+                            runCatching {
+                                val srcResp = httpGetTextWithHeaders(
+                                    "$STREAM_API/sources?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber&providerId=$serverId&isDub=true",
+                                    headers
+                                )
+                                val srcJson = json.parseToJsonElement(srcResp).jsonObject
+                                val sources = srcJson["sources"]?.jsonArray.orEmpty()
+                                val streamHeaders = extractProxyHeaders(srcJson)
+                                sources.mapNotNull { src ->
+                                    val srcObj = src.jsonObject
+                                    val url = srcObj["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                                    if (!url.startsWith("http")) return@mapNotNull null
+                                    StreamItem(
+                                        name = "$addonName · ${serverId.uppercase()} [DUB]",
+                                        title = "$title - Ep $episodeNumber · ${serverId.uppercase()} [DUB] | 🗣️ English Dub",
+                                        description = "Server ${serverId.uppercase()} • English Dub",
+                                        url = url,
+                                        addonName = addonName,
+                                        addonId = addonId,
+                                        streamType = if (url.contains(".m3u8")) "m3u8" else "mp4",
+                                        behaviorHints = StreamBehaviorHints(
+                                            proxyHeaders = StreamProxyHeaders(
+                                                request = streamHeaders
+                                            )
+                                        ),
                                     )
-                                ),
-                            ))
+                                }
+                            }.getOrDefault(emptyList())
                         }
-                    } catch (_: Throwable) {}
+                    }
+
+                    val subLists = subJobs.awaitAll()
+                    val dubLists = dubJobs.awaitAll()
+                    for (list in subLists) {
+                        streams.addAll(list)
+                    }
+                    val existingUrls = streams.map { it.url }.toSet()
+                    for (list in dubLists) {
+                        for (item in list) {
+                            if (item.url !in existingUrls) {
+                                streams.add(item)
+                            }
+                        }
+                    }
                 }
             } catch (_: Throwable) {}
             return streams

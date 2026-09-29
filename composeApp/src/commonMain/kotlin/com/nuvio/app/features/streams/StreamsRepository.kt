@@ -341,7 +341,7 @@ object StreamsRepository {
 
         // Initialise loading placeholders
         val installedAddonOrder = streamAddons.map { it.addonName } + offlineAnimeGroups.map { it.addonName }
-        val initialGroups = StreamAutoPlaySelector.orderAddonStreams(streamAddons.map { addon ->
+        val allPlaceholders = (streamAddons.map { addon ->
             AddonStreamGroup(
                 addonName = addon.addonName,
                 addonId = addon.addonId,
@@ -355,7 +355,8 @@ object StreamsRepository {
                 streams = emptyList(),
                 isLoading = true,
             )
-        } + offlineAnimeGroups, installedAddonOrder)
+        } + offlineAnimeGroups).distinctBy { it.addonName.lowercase().trim() }
+        val initialGroups = StreamAutoPlaySelector.orderAddonStreams(allPlaceholders, installedAddonOrder)
         val cachedById = cachedSessionStreams?.associateBy { it.addonId }.orEmpty()
         val populatedInitialGroups = initialGroups.map { group ->
             val cached = cachedById[group.addonId]
@@ -456,10 +457,18 @@ object StreamsRepository {
 
             fun publishAddonGroup(group: AddonStreamGroup) {
                 _uiState.update { current ->
+                    val exists = current.groups.any {
+                        it.addonId == group.addonId || it.addonName.equals(group.addonName, ignoreCase = true)
+                    }
+                    val updatedList = if (exists) {
+                        current.groups.map { currentGroup ->
+                            if (currentGroup.addonId == group.addonId || currentGroup.addonName.equals(group.addonName, ignoreCase = true)) group else currentGroup
+                        }
+                    } else {
+                        current.groups + group
+                    }
                     val updated = StreamAutoPlaySelector.orderAddonStreams(
-                        groups = current.groups.map { currentGroup ->
-                            if (currentGroup.addonId == group.addonId) group else currentGroup
-                        },
+                        groups = updatedList.distinctBy { it.addonName.lowercase().trim() },
                         installedOrder = installedAddonOrder,
                     )
                     val anyLoading = updated.any { it.isLoading }

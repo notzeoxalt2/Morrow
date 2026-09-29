@@ -340,7 +340,38 @@ object PlayerStreamsRepository {
                 )
             }
 
-        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
+        val offlineAnimeGroups = if (isAnime) {
+            listOf(
+                AddonStreamGroup(
+                    addonName = "Anikage",
+                    addonId = "offline:anikage",
+                    streams = emptyList(),
+                    isLoading = true,
+                ),
+                AddonStreamGroup(
+                    addonName = "AnimeSalt",
+                    addonId = "offline:animesalt",
+                    streams = emptyList(),
+                    isLoading = true,
+                ),
+                AddonStreamGroup(
+                    addonName = "HiAnime",
+                    addonId = "offline:hianime",
+                    streams = emptyList(),
+                    isLoading = true,
+                ),
+                AddonStreamGroup(
+                    addonName = "KissKH",
+                    addonId = "offline:kisskh",
+                    streams = emptyList(),
+                    isLoading = true,
+                ),
+            )
+        } else {
+            emptyList()
+        }
+
+        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && offlineAnimeGroups.isEmpty()) {
             stateFlow.value = StreamsUiState(
                 isAnyLoading = false,
                 emptyStateReason = com.nuvio.app.features.streams.StreamsEmptyStateReason.NoCompatibleAddons,
@@ -352,12 +383,12 @@ object PlayerStreamsRepository {
             return
         }
 
-        val installedAddonOrder = streamAddons.map { it.addonName }
+        val installedAddonOrder = streamAddons.map { it.addonName } + offlineAnimeGroups.map { it.addonName }
         log.d {
             "targets $panelName request=$requestKey installed=${installedAddons.size} " +
                 "compatible=${streamAddons.size} plugins=${pluginScrapers.size}"
         }
-        val initialGroups = StreamAutoPlaySelector.orderAddonStreams(streamAddons.map { addon ->
+        val initialGroups = StreamAutoPlaySelector.orderAddonStreams((streamAddons.map { addon ->
             AddonStreamGroup(
                 addonName = addon.addonName,
                 addonId = addon.addonId,
@@ -371,7 +402,7 @@ object PlayerStreamsRepository {
                 streams = emptyList(),
                 isLoading = true,
             )
-        }, installedAddonOrder)
+        } + offlineAnimeGroups).distinctBy { it.addonName.lowercase().trim() }, installedAddonOrder)
         val isInitiallyLoading = initialGroups.any { it.isLoading }
         stateFlow.value = StreamsUiState(
             groups = initialGroups,
@@ -411,10 +442,18 @@ object PlayerStreamsRepository {
             fun publishStreamGroup(group: AddonStreamGroup) {
                 var nextState: StreamsUiState? = null
                 stateFlow.update { current ->
+                    val exists = current.groups.any {
+                        it.addonId == group.addonId || it.addonName.equals(group.addonName, ignoreCase = true)
+                    }
+                    val updatedList = if (exists) {
+                        current.groups.map { currentGroup ->
+                            if (currentGroup.addonId == group.addonId || currentGroup.addonName.equals(group.addonName, ignoreCase = true)) group else currentGroup
+                        }
+                    } else {
+                        current.groups + group
+                    }
                     val updated = StreamAutoPlaySelector.orderAddonStreams(
-                        groups = current.groups.map { currentGroup ->
-                            if (currentGroup.addonId == group.addonId) group else currentGroup
-                        },
+                        groups = updatedList.distinctBy { it.addonName.lowercase().trim() },
                         installedOrder = installedAddonOrder,
                     )
                     val anyLoading = updated.any { it.isLoading }
