@@ -1323,8 +1323,11 @@ compose.desktop {
             packageName = "Morrow"
             packageVersion = desktopReleasePackageVersion
             vendor = "Morrow Media"
+            val isWindowsHost = System.getProperty("os.name").contains("windows", ignoreCase = true)
             if (isMacHost) {
                 appResourcesRootDir.set(macosPlayerAppResourcesRoot)
+            } else if (isWindowsHost) {
+                appResourcesRootDir.set(project.file("src/desktopMain/resources/windows"))
             }
             modules(
                 "java.instrument",
@@ -1335,7 +1338,7 @@ compose.desktop {
             )
             macOS {
                 bundleID = "com.morrow.media.desktop"
-                iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon-transparent.icns"))
+                iconFile.set(project.file("src/desktopMain/resources/icons/morrow-app-icon-transparent.png"))
                 infoPlist {
                     extraKeysRawXml = """
                         <key>CFBundleURLTypes</key>
@@ -1371,14 +1374,16 @@ compose.desktop {
                 }
             }
             windows {
-                iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon-transparent.ico"))
+                iconFile.set(project.file("src/desktopMain/resources/icons/morrow-app-icon-transparent.ico"))
                 upgradeUuid = windowsMsiUpgradeUuid
                 shortcut = true
                 menu = true
                 menuGroup = "Morrow"
+                perUserInstall = true
+                dirChooser = true
             }
             linux {
-                iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon-transparent.png"))
+                iconFile.set(project.file("src/desktopMain/resources/icons/morrow-app-icon-transparent.png"))
                 debMaintainer = "contact@morrow.media"
                 shortcut = true
                 menuGroup = "Morrow"

@@ -156,6 +156,9 @@ object OfflineAnimeProviders {
         )
 
         suspend fun getStreams(title: String, episodeNumber: Int): List<StreamItem> {
+            val fastStreams = AnidapScraper.getStreams(title, episodeNumber, "HiAnime", "offline:hianime")
+            if (fastStreams.isNotEmpty()) return fastStreams
+
             val encodedTitle = title.encodeURLParameter()
             for (host in CONSUMET_HOSTS) {
                 try {
@@ -603,19 +606,43 @@ object OfflineAnimeProviders {
                         val cleanJson = if (start != -1 && end != -1) decodedJson.substring(start, end + 1) else decodedJson
                         val items = json.parseToJsonElement(cleanJson).jsonArray
 
+                        val multiPlyrUrl = "https://animesalt.cx/multi-lang-plyr.php?data=${plyrMatch.groupValues[1]}"
+                        streams.add(
+                            StreamItem(
+                                name = "Multi-Audio Player",
+                                title = "$clean - Ep $episodeNumber · Multi-Audio Player [All Languages]",
+                                description = "AnimeSalt Official Multi-Language Player with Audio Switcher",
+                                url = multiPlyrUrl,
+                                addonName = "AnimeSalt",
+                                addonId = "offline:animesalt",
+                                streamType = "embed",
+                                behaviorHints = StreamBehaviorHints(
+                                    proxyHeaders = StreamProxyHeaders(
+                                        request = mapOf(
+                                            "Referer" to "$BASE/",
+                                            "User-Agent" to "Mozilla/5.0"
+                                        )
+                                    )
+                                )
+                            )
+                        )
+
                         for (itemElem in items) {
                             val item = itemElem.jsonObject
                             val lang = item["language"]?.jsonPrimitive?.content ?: "English"
                             val link = item["link"]?.jsonPrimitive?.content ?: continue
-                            val isDub = !lang.equals("japanese", ignoreCase = true)
-                            val tag = if (isDub) "[$lang Dub]" else "[$lang Sub]"
-                            val langDisplay = if (isDub) "🗣️ $lang Dub" else "🇯🇵 Japanese Sub"
+                            val isJapanese = lang.equals("japanese", ignoreCase = true)
+                            val isEnglish = lang.equals("english", ignoreCase = true)
+                            if (!isJapanese && !isEnglish) continue
+
+                            val tag = if (isJapanese) "[SUB]" else "[DUB]"
+                            val langDisplay = if (isJapanese) "🇯🇵 Japanese Sub" else "🗣️ English Dub"
 
                             streams.add(
                                 StreamItem(
-                                    name = "Multi-Lang $tag",
-                                    title = "$clean - Ep $episodeNumber · Multi-Lang $tag | $langDisplay",
-                                    description = "AnimeSalt Multi-Language Player • $lang",
+                                    name = "$lang $tag",
+                                    title = "$clean - Ep $episodeNumber · $lang $tag | $langDisplay",
+                                    description = "AnimeSalt • $langDisplay",
                                     url = link,
                                     addonName = "AnimeSalt",
                                     addonId = "offline:animesalt",
@@ -866,7 +893,7 @@ object OfflineAnimeProviders {
                 val serversJson = json.parseToJsonElement(serversResp).jsonObject
                 val serverList = serversJson["servers"]?.jsonArray.orEmpty()
 
-                val priorityServers = listOf("koto", "megg", "kiwi", "wave", "zen", "suge", "dib")
+                val priorityServers = listOf("koto", "megg")
                 for (sId in priorityServers) {
                     val sInfo = serverList.firstOrNull { it.jsonObject["id"]?.jsonPrimitive?.content == sId }?.jsonObject
                     val subTypes = sInfo?.get("subTypes")?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: listOf("sub", "dub")
@@ -942,8 +969,8 @@ object OfflineAnimeProviders {
     private object AnidapScraper {
         private const val RESOLVER = "https://anidap.lol"
         private const val STREAM_API = "https://chad.anidap.lol/rest/api"
-        private val WORKING_SUB_SERVERS = listOf("zuna", "sora")
-        private val WORKING_DUB_SERVERS = listOf("sora", "zuna")
+        private val WORKING_SUB_SERVERS = listOf("yuki", "zuna", "sora")
+        private val WORKING_DUB_SERVERS = listOf("yuki", "sora", "zuna")
 
         suspend fun getStreams(
             title: String,
@@ -1018,6 +1045,7 @@ object OfflineAnimeProviders {
                         )
                         val srcJson = json.parseToJsonElement(srcResp).jsonObject
                         val sources = srcJson["sources"]?.jsonArray.orEmpty()
+                        val streamHeaders = extractProxyHeaders(srcJson)
                         val tracks = srcJson["tracks"]?.jsonArray.orEmpty().mapNotNull { t ->
                             val tObj = t.jsonObject
                             val url = tObj["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
@@ -1037,6 +1065,11 @@ object OfflineAnimeProviders {
                                 addonName = addonName,
                                 addonId = addonId,
                                 streamType = if (url.contains(".m3u8")) "m3u8" else "mp4",
+                                behaviorHints = StreamBehaviorHints(
+                                    proxyHeaders = StreamProxyHeaders(
+                                        request = streamHeaders
+                                    )
+                                ),
                                 externalSubtitles = tracks,
                             ))
                         }
@@ -1052,6 +1085,7 @@ object OfflineAnimeProviders {
                         )
                         val srcJson = json.parseToJsonElement(srcResp).jsonObject
                         val sources = srcJson["sources"]?.jsonArray.orEmpty()
+                        val streamHeaders = extractProxyHeaders(srcJson)
                         for (src in sources) {
                             val srcObj = src.jsonObject
                             val url = srcObj["url"]?.jsonPrimitive?.content ?: continue
@@ -1066,12 +1100,38 @@ object OfflineAnimeProviders {
                                 addonName = addonName,
                                 addonId = addonId,
                                 streamType = if (url.contains(".m3u8")) "m3u8" else "mp4",
+                                behaviorHints = StreamBehaviorHints(
+                                    proxyHeaders = StreamProxyHeaders(
+                                        request = streamHeaders
+                                    )
+                                ),
                             ))
                         }
                     } catch (_: Throwable) {}
                 }
             } catch (_: Throwable) {}
             return streams
+        }
+
+        private fun extractProxyHeaders(srcJson: JsonObject): Map<String, String> {
+            val streamHeaders = mutableMapOf<String, String>()
+            val apiHeaders = srcJson["headers"]?.jsonObject
+            if (apiHeaders != null) {
+                for ((k, v) in apiHeaders) {
+                    val value = runCatching { v.jsonPrimitive.content }.getOrNull() ?: v.toString().trim('"')
+                    if (value.isNotBlank()) streamHeaders[k] = value
+                }
+            }
+            if (!streamHeaders.containsKey("Referer")) {
+                streamHeaders["Referer"] = "https://megaplay.buzz/"
+            }
+            if (!streamHeaders.containsKey("Origin")) {
+                streamHeaders["Origin"] = "https://megaplay.buzz"
+            }
+            if (!streamHeaders.containsKey("User-Agent")) {
+                streamHeaders["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            }
+            return streamHeaders
         }
     }
 }

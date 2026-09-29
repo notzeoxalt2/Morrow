@@ -269,6 +269,20 @@ internal fun PlayerScreenRuntime.cyclePlaybackSpeed() {
     controlsVisible = true
 }
 
+internal fun PlayerScreenRuntime.selectVideoQuality(quality: VideoQuality) {
+    videoQuality = quality
+    playerController?.setVideoQuality(quality)
+    showGestureMessage("Quality: ${quality.displayTitle}")
+    controlsVisible = true
+}
+
+internal fun PlayerScreenRuntime.cycleVideoQuality() {
+    val qualities = VideoQuality.entries
+    val currentIndex = qualities.indexOf(videoQuality)
+    val nextQuality = qualities[(currentIndex + 1) % qualities.size]
+    selectVideoQuality(nextQuality)
+}
+
 internal fun PlayerScreenRuntime.activateHoldToSpeed() {
     if (!playerSettingsUiState.holdToSpeedEnabled) return
     val controller = playerController ?: return

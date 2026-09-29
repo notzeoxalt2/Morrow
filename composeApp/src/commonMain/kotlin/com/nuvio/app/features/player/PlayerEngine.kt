@@ -33,6 +33,7 @@ interface PlayerEngineController {
         useCustomSubtitles: Boolean = false,
     ) {}
     fun setSubtitleDelayMs(delayMs: Int) {}
+    fun setVideoQuality(quality: VideoQuality) {}
     fun configureIosVideoOutput(settings: PlayerSettingsUiState) {}
     fun updateNowPlayingMetadata(info: PlayerNowPlayingInfo) {}
     fun clearNowPlayingInfo() {}

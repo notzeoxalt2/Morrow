@@ -385,6 +385,7 @@ private fun ExoPlayerSurface(
                     parameters.build().ignoredTextSelectionFlags or C.SELECTION_FLAG_FORCED
                 )
             }
+            parameters = parameters.setForceHighestSupportedBitrate(true)
             setParameters(parameters)
         }
 
@@ -922,6 +923,38 @@ private fun ExoPlayerSurface(
                 override fun setSubtitleDelayMs(delayMs: Int) {
                     subtitleDelayMs = delayMs.coerceIn(SUBTITLE_DELAY_MIN_MS, SUBTITLE_DELAY_MAX_MS)
                 }
+
+                override fun setVideoQuality(quality: VideoQuality) {
+                    val builder = exoPlayer.trackSelectionParameters.buildUpon()
+                    when (quality) {
+                        VideoQuality.Auto -> {
+                            builder.clearVideoSizeConstraints()
+                                .setMaxVideoBitrate(Int.MAX_VALUE)
+                                .setForceHighestSupportedBitrate(false)
+                        }
+                        VideoQuality.Max -> {
+                            builder.clearVideoSizeConstraints()
+                                .setMaxVideoBitrate(Int.MAX_VALUE)
+                                .setForceHighestSupportedBitrate(true)
+                        }
+                        VideoQuality.High -> {
+                            builder.setMaxVideoSize(1280, 720)
+                                .setMaxVideoBitrate(4_000_000)
+                                .setForceHighestSupportedBitrate(false)
+                        }
+                        VideoQuality.Mid -> {
+                            builder.setMaxVideoSize(854, 480)
+                                .setMaxVideoBitrate(1_500_000)
+                                .setForceHighestSupportedBitrate(false)
+                        }
+                        VideoQuality.Low -> {
+                            builder.setMaxVideoSize(640, 360)
+                                .setMaxVideoBitrate(800_000)
+                                .setForceHighestSupportedBitrate(false)
+                        }
+                    }
+                    exoPlayer.trackSelectionParameters = builder.build()
+                }
             }
         )
     }
@@ -1301,6 +1334,8 @@ private class NuvioLibmpvView(
         mpv.setOptionString("demuxer-max-bytes", "${libmpvCacheBytes()}").logIfMpvError("demuxer-max-bytes")
         mpv.setOptionString("demuxer-max-back-bytes", "${libmpvCacheBytes()}").logIfMpvError("demuxer-max-back-bytes")
         mpv.setOptionString("vd-lavc-film-grain", "cpu")
+        mpv.setOptionString("hls-bitrate", "max")
+        mpv.setOptionString("ytdl-format", "bestvideo+bestaudio/best")
         mpv.setPropertyBoolean("keep-open", true)
         mpv.setPropertyBoolean("input-default-bindings", true)
         mpv.setPropertyBoolean("audio-fallback-to-null", true)
@@ -1615,6 +1650,33 @@ private class NuvioLibmpvView(
                         "sub-delay",
                         delayMs.coerceIn(SUBTITLE_DELAY_MIN_MS, SUBTITLE_DELAY_MAX_MS) / 1000.0,
                     )
+                }
+            }
+
+            override fun setVideoQuality(quality: VideoQuality) {
+                executeMpv {
+                    when (quality) {
+                        VideoQuality.Auto -> {
+                            mpv.setPropertyString("hls-bitrate", "auto")
+                            mpv.setPropertyString("ytdl-format", "bestvideo+bestaudio/best")
+                        }
+                        VideoQuality.Max -> {
+                            mpv.setPropertyString("hls-bitrate", "max")
+                            mpv.setPropertyString("ytdl-format", "bestvideo+bestaudio/best")
+                        }
+                        VideoQuality.High -> {
+                            mpv.setPropertyString("hls-bitrate", "4000000")
+                            mpv.setPropertyString("ytdl-format", "bestvideo[height<=720]+bestaudio/best[height<=720]/best")
+                        }
+                        VideoQuality.Mid -> {
+                            mpv.setPropertyString("hls-bitrate", "1500000")
+                            mpv.setPropertyString("ytdl-format", "bestvideo[height<=480]+bestaudio/best[height<=480]/best")
+                        }
+                        VideoQuality.Low -> {
+                            mpv.setPropertyString("hls-bitrate", "800000")
+                            mpv.setPropertyString("ytdl-format", "bestvideo[height<=360]+bestaudio/best[height<=360]/best")
+                        }
+                    }
                 }
             }
         }

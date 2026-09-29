@@ -9,6 +9,7 @@ import com.nuvio.app.features.addons.fetchAddonResponseText
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.plugins.PluginRepository
+import com.nuvio.app.features.plugins.normalizePluginType
 import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.providers.offline.OfflineAnimeProviders
 import kotlinx.coroutines.CoroutineScope
@@ -266,7 +267,13 @@ object EpisodeStreamPrefetcher {
 
         val isAnime = type.equals("anime", ignoreCase = true) ||
             videoId.startsWith("kitsu:") || videoId.startsWith("mal:") || videoId.startsWith("anilist:") ||
-            resolvedParentId.startsWith("kitsu:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("anilist:")
+            resolvedParentId.startsWith("kitsu:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("anilist:") ||
+            meta?.genres?.any { it.equals("Anime", ignoreCase = true) || it.contains("anime", ignoreCase = true) } == true ||
+            (meta?.genres?.any { it.contains("animation", ignoreCase = true) } == true &&
+                (meta.country?.contains("JP", ignoreCase = true) == true ||
+                 meta.country?.contains("Japan", ignoreCase = true) == true ||
+                 meta.language?.equals("ja", ignoreCase = true) == true ||
+                 meta.language?.contains("Japanese", ignoreCase = true) == true))
 
         val offlineJob = if (isAnime) {
             scope.launch {
@@ -338,7 +345,17 @@ object EpisodeStreamPrefetcher {
 
         // 3. Community Plugins
         val pluginJobs = if (AppFeaturePolicy.pluginsEnabled) {
-            val pluginScrapers = PluginRepository.getEnabledScrapersForType(type)
+            val effectiveType = if (isAnime) "anime" else type
+            val pluginScrapers = PluginRepository.getEnabledScrapersForType(effectiveType).filter { scraper ->
+                val isAnimeScraper = scraper.supportedTypes.any { normalizePluginType(it) == "anime" } ||
+                    scraper.repositoryUrl.contains("anime", ignoreCase = true) ||
+                    scraper.id.contains("anime", ignoreCase = true) ||
+                    scraper.name.contains("anime", ignoreCase = true) ||
+                    listOf("anikage", "animesalt", "hianime", "animepahe", "anidb", "anikototv", "aniwaves", "anitaku", "miruro", "reanime", "animeheaven", "kurage", "animedekho", "anime-nexus", "lunarx", "saltanime", "marin", "zoro", "yugen", "kickassanime", "allanime", "otaku").any {
+                        scraper.id.contains(it, ignoreCase = true) || scraper.name.contains(it, ignoreCase = true)
+                    }
+                if (isAnime) true else !isAnimeScraper
+            }
             val pluginUiState = PluginRepository.uiState.value
             val providerGroups = pluginScrapers.toPluginProviderGroups(
                 repositories = pluginUiState.repositories,
@@ -354,7 +371,7 @@ object EpisodeStreamPrefetcher {
                                     PluginRepository.executeScraper(
                                         scraper = scraper,
                                         tmdbId = pluginContentId(videoId, season, episode),
-                                        mediaType = type,
+                                        mediaType = if (isAnime) "anime" else type,
                                         season = season,
                                         episode = episode,
                                     ).getOrNull()?.let { results ->

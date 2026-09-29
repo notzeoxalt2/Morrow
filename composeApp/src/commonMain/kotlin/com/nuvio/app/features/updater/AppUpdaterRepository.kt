@@ -65,9 +65,10 @@ internal object AppUpdaterRepository {
 
     suspend fun getLatestChannelUpdate(channel: UpdateChannel): Result<AppUpdate> = runCatching {
         val source = AppUpdaterPlatform.releaseSource
-        val response = httpRequestRaw(
+        var primaryUrl = "https://api.github.com/repos/${source.owner}/${source.repo}/${releasePath(channel)}"
+        var response = httpRequestRaw(
             method = "GET",
-            url = "https://api.github.com/repos/${source.owner}/${source.repo}/${releasePath(channel)}",
+            url = primaryUrl,
             headers = mapOf(
                 "Accept" to "application/vnd.github+json",
                 "User-Agent" to source.userAgent,
@@ -75,6 +76,20 @@ internal object AppUpdaterRepository {
             body = "",
         )
         currentCoroutineContext().ensureActive()
+        if (response.status == 404 && primaryUrl.contains("releases/latest")) {
+            // If latest returned 404 (common when only prereleases exist), fall back to list of releases
+            val fallbackUrl = "https://api.github.com/repos/${source.owner}/${source.repo}/releases?per_page=20"
+            response = httpRequestRaw(
+                method = "GET",
+                url = fallbackUrl,
+                headers = mapOf(
+                    "Accept" to "application/vnd.github+json",
+                    "User-Agent" to source.userAgent,
+                ),
+                body = "",
+            )
+            currentCoroutineContext().ensureActive()
+        }
         if (response.status == 404) throw NoChannelReleaseException()
         if (response.status !in 200..299) {
             error(getString(Res.string.updates_github_api_error, response.status))
@@ -88,10 +103,11 @@ internal object AppUpdaterRepository {
             ?: throw NoChannelReleaseException()
     }
 
-    internal fun releasePath(channel: UpdateChannel): String = when (channel) {
-        UpdateChannel.STABLE -> "releases/latest"
-        UpdateChannel.BETA -> "releases?per_page=100"
-        UpdateChannel.ALL_RELEASES -> "releases?per_page=20"
+    internal fun releasePath(channel: UpdateChannel): String = when {
+        AppUpdaterPlatform.releaseSource.includePrereleases -> "releases?per_page=20"
+        channel == UpdateChannel.STABLE -> "releases/latest"
+        channel == UpdateChannel.BETA -> "releases?per_page=100"
+        else -> "releases?per_page=20"
     }
 
     internal fun selectUpdate(
@@ -105,10 +121,14 @@ internal object AppUpdaterRepository {
             fallbackNameFragments = listOf("universal", "all"),
         ),
     ): AppUpdate? {
-        val releases = when (channel) {
-            UpdateChannel.STABLE -> listOf(json.decodeFromString<GitHubReleaseDto>(responseBody))
-            UpdateChannel.BETA, UpdateChannel.ALL_RELEASES ->
-                json.decodeFromString<List<GitHubReleaseDto>>(responseBody)
+        val releases = try {
+            json.decodeFromString<List<GitHubReleaseDto>>(responseBody)
+        } catch (_: Exception) {
+            try {
+                listOf(json.decodeFromString<GitHubReleaseDto>(responseBody))
+            } catch (_: Exception) {
+                emptyList()
+            }
         }
         val eligibleReleases = ReleaseSelector.eligibleReleases(releases, channel)
         val releasesToCheck = if (channel == UpdateChannel.ALL_RELEASES) {

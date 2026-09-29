@@ -14,6 +14,7 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
+import com.nuvio.app.features.plugins.normalizePluginType
 import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.plugins.PluginsUiState
 import com.nuvio.app.features.providers.offline.OfflineAnimeProviders
@@ -244,17 +245,6 @@ object StreamsRepository {
             return
         }
 
-        val installedAddons = AddonRepository.uiState.value.addons.enabledAddons()
-        val pluginScrapers = if (AppFeaturePolicy.pluginsEnabled) {
-            PluginRepository.getEnabledScrapersForType(type)
-        } else {
-            emptyList()
-        }
-        val pluginProviderGroups = pluginScrapers.toPluginProviderGroups(
-            repositories = pluginUiState.repositories,
-            groupByRepository = pluginUiState.groupStreamsByRepository,
-        )
-
         val resolvedParentId = parentMetaId?.takeIf { it.isNotBlank() }
             ?: videoId.substringBefore(':').takeIf { it.isNotBlank() }
             ?: videoId
@@ -276,7 +266,33 @@ object StreamsRepository {
         val isAnime = type.equals("anime", ignoreCase = true) ||
             videoId.startsWith("kitsu:") || videoId.startsWith("mal:") || videoId.startsWith("anilist:") ||
             resolvedParentId.startsWith("kitsu:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("anilist:") ||
-            meta?.genres?.any { it.contains("anime", ignoreCase = true) || it.contains("animation", ignoreCase = true) } == true
+            meta?.genres?.any { it.equals("Anime", ignoreCase = true) || it.contains("anime", ignoreCase = true) } == true ||
+            (meta?.genres?.any { it.contains("animation", ignoreCase = true) } == true &&
+                (meta.country?.contains("JP", ignoreCase = true) == true ||
+                 meta.country?.contains("Japan", ignoreCase = true) == true ||
+                 meta.language?.equals("ja", ignoreCase = true) == true ||
+                 meta.language?.contains("Japanese", ignoreCase = true) == true))
+
+        val installedAddons = AddonRepository.uiState.value.addons.enabledAddons()
+        val effectiveType = if (isAnime) "anime" else type
+        val pluginScrapers = if (AppFeaturePolicy.pluginsEnabled) {
+            PluginRepository.getEnabledScrapersForType(effectiveType).filter { scraper ->
+                val isAnimeScraper = scraper.supportedTypes.any { normalizePluginType(it) == "anime" } ||
+                    scraper.repositoryUrl.contains("anime", ignoreCase = true) ||
+                    scraper.id.contains("anime", ignoreCase = true) ||
+                    scraper.name.contains("anime", ignoreCase = true) ||
+                    listOf("anikage", "animesalt", "hianime", "animepahe", "anidb", "anikototv", "aniwaves", "anitaku", "miruro", "reanime", "animeheaven", "kurage", "animedekho", "anime-nexus", "lunarx", "saltanime", "marin", "zoro", "yugen", "kickassanime", "allanime", "otaku").any {
+                        scraper.id.contains(it, ignoreCase = true) || scraper.name.contains(it, ignoreCase = true)
+                    }
+                if (isAnime) true else !isAnimeScraper
+            }
+        } else {
+            emptyList()
+        }
+        val pluginProviderGroups = pluginScrapers.toPluginProviderGroups(
+            repositories = pluginUiState.repositories,
+            groupByRepository = pluginUiState.groupStreamsByRepository,
+        )
 
         val offlineAnimeGroups = if (isAnime) {
             listOf(
@@ -618,7 +634,7 @@ object StreamsRepository {
                                     PluginRepository.executeScraper(
                                         scraper = scraper,
                                         tmdbId = targetContentId,
-                                        mediaType = type,
+                                        mediaType = if (isAnime) "anime" else type,
                                         season = season,
                                         episode = episode,
                                     ).fold(

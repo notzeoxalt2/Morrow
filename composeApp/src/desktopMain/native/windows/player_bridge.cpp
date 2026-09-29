@@ -1662,6 +1662,8 @@ private:
             setMpvOptionStringLocked("demuxer-seekable-cache", "yes");
             setMpvOptionStringLocked("cache-secs", "36000");
             setMpvOptionStringLocked("hr-seek", "no");
+            setMpvOptionStringLocked("hls-bitrate", "max");
+            setMpvOptionStringLocked("ytdl-format", "bestvideo+bestaudio/best");
 
             int64_t wid = (int64_t)(intptr_t)containerHwnd;
             int widResult = api.setOption(mpv, "wid", MPV_FORMAT_INT64, &wid);

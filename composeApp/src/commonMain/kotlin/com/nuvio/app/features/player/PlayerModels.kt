@@ -102,6 +102,24 @@ enum class AndroidLibmpvVideoOutput(
     ),
 }
 
+enum class VideoQuality(
+    val id: String,
+    val label: String,
+    val displayTitle: String,
+    val displaySubtitle: String,
+) {
+    Auto("auto", "Auto", "Auto", "Adaptive bitrate (matches network)"),
+    Max("max", "Max", "Max (1080p+)", "Maximum bitrate and highest resolution"),
+    High("high", "720p", "High (720p)", "HD 720p resolution"),
+    Mid("mid", "480p", "480p", "Standard definition 480p"),
+    Low("low", "360p", "360p", "Data saver / low bandwidth");
+
+    companion object {
+        fun fromId(id: String?): VideoQuality =
+            entries.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: Max
+    }
+}
+
 enum class IosVideoOutputPreset(
     val label: String,
     val description: String,
