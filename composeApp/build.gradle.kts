@@ -1027,9 +1027,27 @@ tasks.withType<Jar>().configureEach {
     }
 }
 
+val prepareWindowsPackageResources = tasks.register<Copy>("prepareWindowsPackageResources") {
+    from(project.file("src/desktopMain/resources/windows"))
+    into(layout.buildDirectory.dir("compose/tmp/resources"))
+}
+
 tasks.matching { it.name == "prepareAppResources" }.configureEach {
     if (isMacHost) {
         dependsOn(prepareMacosPlayerAppResources)
+    }
+}
+
+tasks.matching {
+    it.name in setOf(
+        "packageMsi",
+        "packageReleaseMsi",
+        "packageDistributionForCurrentOS",
+        "packageReleaseDistributionForCurrentOS"
+    )
+}.configureEach {
+    if (isWindowsHost) {
+        dependsOn(prepareWindowsPackageResources)
     }
 }
 
@@ -1327,7 +1345,7 @@ compose.desktop {
             if (isMacHost) {
                 appResourcesRootDir.set(macosPlayerAppResourcesRoot)
             } else if (isWindowsHost) {
-                appResourcesRootDir.set(project.file("src/desktopMain/resources/windows"))
+                appResourcesRootDir.set(project.file("src/desktopMain/resources"))
             }
             modules(
                 "java.instrument",
