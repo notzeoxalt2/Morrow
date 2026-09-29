@@ -12,6 +12,7 @@ import com.nuvio.app.features.streams.StreamProxyHeaders
 import com.nuvio.app.features.streams.StreamSubtitle
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -142,7 +143,29 @@ object OfflineAnimeProviders {
             )
         }
 
-        listOf(j1, j2, j3, j4).joinAll()
+        // 5. AnimePahe (Starts immediately)
+        val j5 = launch {
+            val streams = runCatching {
+                withTimeoutOrNull(8_000L) {
+                    AnimePaheScraper.getStreams(cleanTitle, epNum)
+                } ?: emptyList()
+            }.getOrElse { e ->
+                log.w(e) { "AnimePahe error" }
+                emptyList()
+            }
+            if (streams.isNotEmpty()) {
+                onGroupLoaded(
+                    AddonStreamGroup(
+                        addonName = "AnimePahe",
+                        addonId = "offline:animepahe",
+                        streams = streams,
+                        isLoading = false,
+                    )
+                )
+            }
+        }
+
+        listOf(j1, j2, j3, j4, j5).joinAll()
     }
 
     // ==========================================
@@ -787,28 +810,73 @@ object OfflineAnimeProviders {
                         mapOf("User-Agent" to "Mozilla/5.0", "Referer" to domain)
                     )
 
-                    val kwikMatches = Regex("""data-src=["'](https?://[^"']*kwik[^"']*)["']""").findAll(playPage)
-                    kwikMatches.forEachIndexed { idx, match ->
-                        val kwikUrl = match.groupValues[1]
-                        streams.add(
-                            StreamItem(
-                                name = "AnimePahe · Server ${idx + 1}",
-                                title = "$title - Episode $episodeNumber",
-                                description = "AnimePahe Direct Stream",
-                                url = kwikUrl,
-                                addonName = "AnimePahe",
-                                addonId = "offline:animepahe",
-                                streamType = "m3u8",
-                                behaviorHints = StreamBehaviorHints(
-                                    proxyHeaders = StreamProxyHeaders(
-                                        request = mapOf(
-                                            "Referer" to domain,
-                                            "Origin" to domain,
+                    // Parse dropdown buttons dynamically (fansub group, resolution, audio)
+                    val buttonRegex = Regex("""<button[^>]*class=["'][^"']*dropdown-item[^"']*["'][^>]*>([^<]+)</button>""", RegexOption.IGNORE_CASE)
+                    val foundButtons = buttonRegex.findAll(playPage).toList()
+                    if (foundButtons.isNotEmpty()) {
+                        for (btnMatch in foundButtons) {
+                            val tagHtml = btnMatch.value
+                            val label = btnMatch.groupValues[1].trim()
+                            val audio = Regex("""data-audio=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(tagHtml)?.groupValues?.get(1)?.lowercase() ?: "jpn"
+                            val res = Regex("""data-resolution=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(tagHtml)?.groupValues?.get(1) ?: ""
+                            val src = Regex("""data-src=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(tagHtml)?.groupValues?.get(1)
+                                ?: Regex("""data-url=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(tagHtml)?.groupValues?.get(1)
+                                ?: continue
+                            if (!src.startsWith("http")) continue
+
+                            val isDub = audio == "eng"
+                            val audioTag = if (isDub) "[DUB]" else "[SUB]"
+                            val langLabel = if (isDub) "🗣️ English Dub" else "🇯🇵 Japanese Sub"
+                            val quality = if (res.isNotBlank()) "${res}p" else "Auto"
+                            val streamName = if (label.isNotBlank()) "$label $audioTag" else "Kwik · $quality $audioTag"
+
+                            streams.add(
+                                StreamItem(
+                                    name = "AnimePahe · $streamName",
+                                    title = "$title - Episode $episodeNumber · $streamName | $langLabel",
+                                    description = "AnimePahe • $streamName",
+                                    url = src,
+                                    addonName = "AnimePahe",
+                                    addonId = "offline:animepahe",
+                                    streamType = if (src.contains(".m3u8")) "m3u8" else "embed",
+                                    behaviorHints = StreamBehaviorHints(
+                                        proxyHeaders = StreamProxyHeaders(
+                                            request = mapOf(
+                                                "Referer" to domain,
+                                                "Origin" to domain,
+                                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                                            )
                                         )
-                                    )
-                                ),
+                                    ),
+                                )
                             )
-                        )
+                        }
+                    }
+
+                    if (streams.isEmpty()) {
+                        val kwikMatches = Regex("""data-src=["'](https?://[^"']*kwik[^"']*)["']""").findAll(playPage)
+                        kwikMatches.forEachIndexed { idx, match ->
+                            val kwikUrl = match.groupValues[1]
+                            streams.add(
+                                StreamItem(
+                                    name = "AnimePahe · Stream ${idx + 1}",
+                                    title = "$title - Episode $episodeNumber · Stream ${idx + 1}",
+                                    description = "AnimePahe Direct Stream",
+                                    url = kwikUrl,
+                                    addonName = "AnimePahe",
+                                    addonId = "offline:animepahe",
+                                    streamType = "embed",
+                                    behaviorHints = StreamBehaviorHints(
+                                        proxyHeaders = StreamProxyHeaders(
+                                            request = mapOf(
+                                                "Referer" to domain,
+                                                "Origin" to domain,
+                                            )
+                                        )
+                                    ),
+                                )
+                            )
+                        }
                     }
                     if (streams.isNotEmpty()) break
                 } catch (_: Throwable) {}
@@ -865,6 +933,8 @@ object OfflineAnimeProviders {
     private object AnikageScraper {
         private const val BASE = "https://anikage.cc"
 
+        private data class AnikageServerInfo(val id: String, val providerId: String, val subTypes: List<String>)
+
         suspend fun getStreams(title: String, episodeNumber: Int): List<StreamItem> {
             val streams = mutableListOf<StreamItem>()
             try {
@@ -886,24 +956,53 @@ object OfflineAnimeProviders {
 
                 val slug = animeObj["slug"]?.jsonPrimitive?.content ?: return emptyList()
 
-                coroutineScope {
-                    val subDeferred = async {
-                        fetchSources(clean, slug, episodeNumber, "koto", "sub")
-                            ?: fetchSources(clean, slug, episodeNumber, "kiwi", "sub")
-                    }
-                    val dubDeferred = async {
-                        fetchSources(clean, slug, episodeNumber, "kiwi", "dub")
-                            ?: fetchSources(clean, slug, episodeNumber, "wave", "dub")
-                            ?: fetchSources(clean, slug, episodeNumber, "dib", "dub")
-                    }
-                    val subItems = subDeferred.await().orEmpty()
-                    val dubItems = dubDeferred.await().orEmpty()
+                // Dynamically fetch current server list from Anikage (never hardcoded)
+                val serversResp = runCatching {
+                    httpGetTextWithHeaders(
+                        "$BASE/api/media/anime/$slug/episodes/$episodeNumber/servers",
+                        mapOf("User-Agent" to "Mozilla/5.0", "Accept" to "application/json")
+                    )
+                }.getOrNull()
 
-                    streams.addAll(subItems)
-                    val subUrls = subItems.map { it.url }.toSet()
-                    for (dub in dubItems) {
-                        if (dub.url !in subUrls) {
-                            streams.add(dub)
+                val serverList = mutableListOf<AnikageServerInfo>()
+                if (serversResp != null) {
+                    val sJson = json.parseToJsonElement(serversResp).jsonObject
+                    val serversArr = sJson["servers"]?.jsonArray.orEmpty()
+                    for (elem in serversArr) {
+                        val sObj = elem.jsonObject
+                        val id = sObj["id"]?.jsonPrimitive?.content ?: sObj["providerId"]?.jsonPrimitive?.content ?: continue
+                        val pId = sObj["providerId"]?.jsonPrimitive?.content ?: id
+                        val types = sObj["subTypes"]?.jsonArray.orEmpty().mapNotNull { it.jsonPrimitive.content }
+                        serverList.add(AnikageServerInfo(id, pId, types))
+                    }
+                }
+                if (serverList.isEmpty()) {
+                    serverList.add(AnikageServerInfo("koto", "koto", listOf("sub", "dub")))
+                }
+
+                coroutineScope {
+                    val jobs = mutableListOf<Deferred<List<StreamItem>?>>()
+
+                    // Fetch sub servers that actually support "sub"
+                    val subServers = serverList.filter { "sub" in it.subTypes }.take(3)
+                    for (s in subServers) {
+                        jobs.add(async { fetchSources(clean, slug, episodeNumber, s.providerId, "sub") })
+                    }
+
+                    // Fetch dub servers that actually support "dub"
+                    val dubServers = serverList.filter { "dub" in it.subTypes }.take(3)
+                    for (s in dubServers) {
+                        jobs.add(async { fetchSources(clean, slug, episodeNumber, s.providerId, "dub") })
+                    }
+
+                    val results = jobs.awaitAll().filterNotNull()
+                    val seenUrls = mutableSetOf<String>()
+                    for (list in results) {
+                        for (item in list) {
+                            val u = item.url ?: continue
+                            if (seenUrls.add(u)) {
+                                streams.add(item)
+                            }
                         }
                     }
                 }
@@ -929,8 +1028,9 @@ object OfflineAnimeProviders {
                     )
                 )
                 val srcJson = json.parseToJsonElement(srcResp).jsonObject
-                val sources = srcJson["sources"]?.jsonArray.orEmpty()
-                if (sources.isEmpty()) return null
+                val isDub = type.equals("dub", ignoreCase = true)
+                val typeTag = if (isDub) "[DUB]" else "[SUB]"
+                val langDisplay = if (isDub) "🗣️ English Dub" else "🇯🇵 Japanese Sub"
 
                 val subtitles = srcJson["subtitles"]?.jsonArray.orEmpty().mapNotNull { subElem ->
                     val sub = subElem.jsonObject
@@ -941,37 +1041,78 @@ object OfflineAnimeProviders {
                     if (subFileUrl != null) StreamSubtitle(url = subFileUrl, language = label, name = label) else null
                 }
 
-                val serverName = provider.replaceFirstChar { it.uppercase() }
-                val isDub = type == "dub"
-                val typeTag = if (isDub) "[DUB]" else "[SUB]"
-                val langDisplay = if (isDub) "🗣️ English Dub" else "🇯🇵 Japanese Sub"
+                val items = mutableListOf<StreamItem>()
 
-                val items = sources.mapNotNull { srcElem ->
-                    val src = srcElem.jsonObject
-                    val rawUrl = src["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                    val isM3u8 = src["isM3U8"]?.jsonPrimitive?.booleanOrNull ?: true
-                    val quality = src["quality"]?.jsonPrimitive?.content ?: src["label"]?.jsonPrimitive?.content ?: "1080p"
-                    val streamUrl = "https://og.bakayaro.live/${if (isM3u8) "m3u8" else "stream"}/$rawUrl"
+                // 1. Dynamic embeds array (contains real server name and direct player embed url)
+                val embeds = srcJson["embeds"]?.jsonArray.orEmpty()
+                for (embElem in embeds) {
+                    val emb = embElem.jsonObject
+                    val embUrl = emb["url"]?.jsonPrimitive?.content ?: continue
+                    val embServer = emb["server"]?.jsonPrimitive?.content
+                        ?: emb["label"]?.jsonPrimitive?.content
+                        ?: provider.replaceFirstChar { it.uppercase() }
+                    val embType = emb["type"]?.jsonPrimitive?.content ?: type
+                    val embIsDub = embType.equals("dub", ignoreCase = true)
+                    val embTag = if (embIsDub) "[DUB]" else "[SUB]"
+                    val embLang = if (embIsDub) "🗣️ English Dub" else "🇯🇵 Japanese Sub"
 
-                    StreamItem(
-                        name = "Server $serverName $typeTag",
-                        title = "$clean - Ep $episodeNumber · $serverName $typeTag | $langDisplay ($quality)",
-                        description = "Anikage • $serverName $typeTag • $quality",
-                        url = streamUrl,
-                        addonName = "Anikage",
-                        addonId = "offline:anikage",
-                        streamType = if (isM3u8) "m3u8" else "mp4",
-                        externalSubtitles = subtitles,
-                        behaviorHints = StreamBehaviorHints(
-                            proxyHeaders = StreamProxyHeaders(
-                                request = mapOf(
-                                    "Referer" to "$BASE/",
-                                    "Origin" to BASE,
-                                    "User-Agent" to "Mozilla/5.0"
+                    items.add(
+                        StreamItem(
+                            name = "Anikage · $embServer $embTag",
+                            title = "$clean - Ep $episodeNumber · $embServer $embTag | $embLang",
+                            description = "Anikage • $embServer $embTag",
+                            url = embUrl,
+                            addonName = "Anikage",
+                            addonId = "offline:anikage",
+                            streamType = if (embUrl.contains(".m3u8")) "m3u8" else "embed",
+                            externalSubtitles = subtitles,
+                            behaviorHints = StreamBehaviorHints(
+                                proxyHeaders = StreamProxyHeaders(
+                                    request = mapOf(
+                                        "Referer" to "$BASE/",
+                                        "Origin" to BASE,
+                                        "User-Agent" to "Mozilla/5.0"
+                                    )
                                 )
                             )
                         )
                     )
+                }
+
+                // 2. Direct sources array (fallback or additional stream)
+                if (items.isEmpty()) {
+                    val sources = srcJson["sources"]?.jsonArray.orEmpty()
+                    val pName = provider.replaceFirstChar { it.uppercase() }
+                    for (srcElem in sources) {
+                        val src = srcElem.jsonObject
+                        val embedUrl = src["embedUrl"]?.jsonPrimitive?.content
+                        val rawUrl = src["url"]?.jsonPrimitive?.content
+                        val streamUrl = embedUrl ?: if (!rawUrl.isNullOrBlank() && rawUrl.startsWith("http")) rawUrl else null
+                        if (streamUrl != null) {
+                            val quality = src["quality"]?.jsonPrimitive?.content ?: src["label"]?.jsonPrimitive?.content ?: "Auto"
+                            items.add(
+                                StreamItem(
+                                    name = "Anikage · $pName $typeTag",
+                                    title = "$clean - Ep $episodeNumber · $pName $typeTag | $langDisplay ($quality)",
+                                    description = "Anikage • $pName $typeTag • $quality",
+                                    url = streamUrl,
+                                    addonName = "Anikage",
+                                    addonId = "offline:anikage",
+                                    streamType = if (streamUrl.contains(".m3u8")) "m3u8" else "embed",
+                                    externalSubtitles = subtitles,
+                                    behaviorHints = StreamBehaviorHints(
+                                        proxyHeaders = StreamProxyHeaders(
+                                            request = mapOf(
+                                                "Referer" to "$BASE/",
+                                                "Origin" to BASE,
+                                                "User-Agent" to "Mozilla/5.0"
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        }
+                    }
                 }
                 items.ifEmpty { null }
             } catch (_: Throwable) {
@@ -987,8 +1128,8 @@ object OfflineAnimeProviders {
     private object AnidapScraper {
         private const val RESOLVER = "https://anidap.lol"
         private const val STREAM_API = "https://chad.anidap.lol/rest/api"
-        private val WORKING_SUB_SERVERS = listOf("yuki", "zuna", "sora")
-        private val WORKING_DUB_SERVERS = listOf("yuki", "sora", "zuna")
+
+        private data class DynamicProvider(val id: String, val name: String, val tip: String)
 
         suspend fun getStreams(
             title: String,
@@ -1035,7 +1176,7 @@ object OfflineAnimeProviders {
                 val detailJson = json.parseToJsonElement(detailResp).jsonObject
                 val animeId = detailJson["data"]?.jsonObject?.get("id")?.jsonPrimitive?.content ?: return emptyList()
 
-                // Get server list
+                // Dynamically fetch current server list from the API (servers change regularly)
                 val serverResp = runCatching {
                     httpGetTextWithHeaders(
                         "$STREAM_API/servers?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber",
@@ -1044,22 +1185,34 @@ object OfflineAnimeProviders {
                 }.getOrNull()
                 val serverJson = if (serverResp != null) json.parseToJsonElement(serverResp).jsonObject else null
 
-                val subServers = serverJson?.get("subProviders")?.jsonArray
-                    ?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.content }
-                    ?.filter { it in WORKING_SUB_SERVERS }
-                    ?: WORKING_SUB_SERVERS
+                val subServers = serverJson?.get("subProviders")?.jsonArray.orEmpty().mapNotNull { elem ->
+                    val id = elem.jsonObject["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    val rawName = elem.jsonObject["name"]?.jsonPrimitive?.content
+                        ?: elem.jsonObject["label"]?.jsonPrimitive?.content
+                        ?: id
+                    val cleanName = rawName.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+                    val tip = elem.jsonObject["tip"]?.jsonPrimitive?.content ?: ""
+                    DynamicProvider(id, cleanName, tip)
+                }.ifEmpty {
+                    listOf(DynamicProvider("default", "Primary", ""))
+                }
 
-                val dubServers = serverJson?.get("dubProviders")?.jsonArray
-                    ?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.content }
-                    ?.filter { it in WORKING_DUB_SERVERS }
-                    ?: WORKING_DUB_SERVERS
+                val dubServers = serverJson?.get("dubProviders")?.jsonArray.orEmpty().mapNotNull { elem ->
+                    val id = elem.jsonObject["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    val rawName = elem.jsonObject["name"]?.jsonPrimitive?.content
+                        ?: elem.jsonObject["label"]?.jsonPrimitive?.content
+                        ?: id
+                    val cleanName = rawName.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+                    val tip = elem.jsonObject["tip"]?.jsonPrimitive?.content ?: ""
+                    DynamicProvider(id, cleanName, tip)
+                }
 
                 coroutineScope {
-                    val subJobs = subServers.take(2).map { serverId ->
+                    val subJobs = subServers.take(3).map { prov ->
                         async {
                             runCatching {
                                 val srcResp = httpGetTextWithHeaders(
-                                    "$STREAM_API/sources?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber&providerId=$serverId",
+                                    "$STREAM_API/sources?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber&providerId=${prov.id}",
                                     headers
                                 )
                                 val srcJson = json.parseToJsonElement(srcResp).jsonObject
@@ -1076,10 +1229,12 @@ object OfflineAnimeProviders {
                                     val srcObj = src.jsonObject
                                     val url = srcObj["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
                                     if (!url.startsWith("http")) return@mapNotNull null
+                                    val quality = srcObj["quality"]?.jsonPrimitive?.content ?: srcObj["label"]?.jsonPrimitive?.content ?: "1080p"
+                                    val desc = if (prov.tip.isNotBlank()) "${prov.name} • ${prov.tip}" else "${prov.name} • Japanese Sub"
                                     StreamItem(
-                                        name = "$addonName · ${serverId.uppercase()} [SUB]",
-                                        title = "$title - Ep $episodeNumber · ${serverId.uppercase()} [SUB] | 🇯🇵 Japanese Sub",
-                                        description = "Server ${serverId.uppercase()} • Japanese Sub",
+                                        name = "$addonName · ${prov.name} [SUB]",
+                                        title = "$title - Ep $episodeNumber · ${prov.name} [SUB] | 🇯🇵 Japanese Sub ($quality)",
+                                        description = desc,
                                         url = url,
                                         addonName = addonName,
                                         addonId = addonId,
@@ -1096,11 +1251,11 @@ object OfflineAnimeProviders {
                         }
                     }
 
-                    val dubJobs = dubServers.take(2).map { serverId ->
+                    val dubJobs = dubServers.take(3).map { prov ->
                         async {
                             runCatching {
                                 val srcResp = httpGetTextWithHeaders(
-                                    "$STREAM_API/sources?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber&providerId=$serverId&isDub=true",
+                                    "$STREAM_API/sources?id=${animeId.encodeURLParameter()}&epNum=$episodeNumber&providerId=${prov.id}&isDub=true",
                                     headers
                                 )
                                 val srcJson = json.parseToJsonElement(srcResp).jsonObject
@@ -1110,10 +1265,12 @@ object OfflineAnimeProviders {
                                     val srcObj = src.jsonObject
                                     val url = srcObj["url"]?.jsonPrimitive?.content ?: return@mapNotNull null
                                     if (!url.startsWith("http")) return@mapNotNull null
+                                    val quality = srcObj["quality"]?.jsonPrimitive?.content ?: srcObj["label"]?.jsonPrimitive?.content ?: "1080p"
+                                    val desc = if (prov.tip.isNotBlank()) "${prov.name} • ${prov.tip}" else "${prov.name} • English Dub"
                                     StreamItem(
-                                        name = "$addonName · ${serverId.uppercase()} [DUB]",
-                                        title = "$title - Ep $episodeNumber · ${serverId.uppercase()} [DUB] | 🗣️ English Dub",
-                                        description = "Server ${serverId.uppercase()} • English Dub",
+                                        name = "$addonName · ${prov.name} [DUB]",
+                                        title = "$title - Ep $episodeNumber · ${prov.name} [DUB] | 🗣️ English Dub ($quality)",
+                                        description = desc,
                                         url = url,
                                         addonName = addonName,
                                         addonId = addonId,
@@ -1167,5 +1324,78 @@ object OfflineAnimeProviders {
             }
             return streamHeaders
         }
+    }
+
+    private fun decodeBase64Safe(input: String): String {
+        val table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        val clean = input.replace("=", "").trim()
+        val bytes = ArrayList<Byte>()
+        var bits = 0
+        var bitCount = 0
+        for (char in clean) {
+            val idx = table.indexOf(char)
+            if (idx >= 0) {
+                bits = (bits shl 6) or idx
+                bitCount += 6
+                if (bitCount >= 8) {
+                    bitCount -= 8
+                    bytes.add(((bits ushr bitCount) and 0xFF).toByte())
+                }
+            }
+        }
+        return bytes.toByteArray().decodeToString()
+    }
+
+    /**
+     * Dynamically parses standard watch-page server grids and lists:
+     * e.g., <div class="item server-item" data-type="sub|dub" data-server-name="..." data-hash="...">
+     * Server names change dynamically across anime releases and domains; this extracts them without hardcoding.
+     */
+    fun parseDynamicServerItemsFromHtml(
+        html: String,
+        title: String,
+        episodeNumber: Int,
+        addonName: String,
+        addonId: String,
+        referer: String,
+    ): List<StreamItem> {
+        val items = mutableListOf<StreamItem>()
+        val tagRegex = Regex("""<div[^>]*class=["'][^"']*server-item[^"']*["'][^>]*>""", RegexOption.IGNORE_CASE)
+        for (tagMatch in tagRegex.findAll(html)) {
+            val tag = tagMatch.value
+            val type = Regex("""data-type=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(tag)?.groupValues?.get(1)?.lowercase() ?: "sub"
+            val serverName = Regex("""data-server-name=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(tag)?.groupValues?.get(1)?.trim() ?: "Server"
+            val hash = Regex("""data-hash=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(tag)?.groupValues?.get(1)?.trim() ?: ""
+            if (hash.isBlank()) continue
+
+            val streamUrl = runCatching { decodeBase64Safe(hash) }.getOrNull() ?: ""
+            if (!streamUrl.startsWith("http")) continue
+
+            val isDub = type == "dub"
+            val typeTag = if (isDub) "[DUB]" else "[SUB]"
+            val langLabel = if (isDub) "🗣️ English Dub" else "🇯🇵 Japanese Sub"
+
+            items.add(
+                StreamItem(
+                    name = "$addonName · $serverName $typeTag",
+                    title = "$title - Ep $episodeNumber · $serverName $typeTag | $langLabel",
+                    description = "$addonName • $serverName • $langLabel",
+                    url = streamUrl,
+                    addonName = addonName,
+                    addonId = addonId,
+                    streamType = if (streamUrl.contains(".m3u8")) "m3u8" else if (streamUrl.contains(".mp4")) "mp4" else "embed",
+                    behaviorHints = StreamBehaviorHints(
+                        proxyHeaders = StreamProxyHeaders(
+                            request = mapOf(
+                                "Referer" to referer,
+                                "Origin" to referer.removeSuffix("/"),
+                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                            )
+                        )
+                    )
+                )
+            )
+        }
+        return items
     }
 }

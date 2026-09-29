@@ -258,7 +258,16 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         playbackSpeedLabel = formatPlaybackSpeedLabel(playbackSnapshot.playbackSpeed),
         subtitlesLabel = stringResource(Res.string.compose_player_subs),
         audioLabel = stringResource(Res.string.compose_player_audio),
-        sourcesLabel = stringResource(Res.string.compose_player_sources),
+        sourcesLabel = (sourceItems.firstOrNull { it.isCurrent }?.label ?: activeStreamTitle)?.let { t ->
+            when {
+                t.contains("2160p", ignoreCase = true) || t.contains("4K", ignoreCase = true) -> "4K"
+                t.contains("1080p", ignoreCase = true) -> "1080p"
+                t.contains("720p", ignoreCase = true) -> "720p"
+                t.contains("480p", ignoreCase = true) -> "480p"
+                t.contains("360p", ignoreCase = true) -> "360p"
+                else -> null
+            }
+        } ?: "Quality",
         episodesLabel = stringResource(Res.string.compose_player_episodes),
         externalPlayerLabel = stringResource(Res.string.streams_open_external_player),
         playLabel = stringResource(Res.string.detail_btn_play),
@@ -363,7 +372,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             playerSettingsUiState.introDbApiKey.isNotBlank() &&
             !activeSubmitIntroImdbId().isNullOrBlank(),
         showVideoSettings = isIos,
-        showSources = activeVideoId != null,
+        showSources = activeVideoId != null || sourceItems.isNotEmpty() || episodeStreamItems.isNotEmpty(),
         showEpisodes = isSeries,
         showExternalPlayer = args.onOpenInExternalPlayer != null,
         durationMs = playbackSnapshot.durationMs,

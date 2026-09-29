@@ -184,7 +184,7 @@ let state = {
   volumeLevel: null,
   subtitlesLabel: "Subs",
   audioLabel: "Audio",
-  sourcesLabel: "Sources",
+  sourcesLabel: "Quality",
   episodesLabel: "Episodes",
   externalPlayerLabel: "External",
   playLabel: "Play",
@@ -2252,13 +2252,13 @@ const renderChrome = () => {
   speedLabel.textContent = state.playbackSpeedLabel || "1x";
   subtitlesLabel.textContent = state.subtitlesLabel || "Subs";
   audioLabel.textContent = state.audioLabel || "Audio";
-  sourcesLabel.textContent = state.sourcesLabel || "Sources";
+  sourcesLabel.textContent = state.sourcesLabel || "Quality";
   episodesLabel.textContent = state.episodesLabel || "Episodes";
   setActionButtonLabel("resize", state.resizeModeLabel || "Fit");
   setActionButtonLabel("speed", state.playbackSpeedLabel || "1x");
   setActionButtonLabel("subtitles", state.subtitlesLabel || "Subs");
   setActionButtonLabel("audio", state.audioLabel || "Audio");
-  setActionButtonLabel("sources", state.sourcesLabel || "Sources");
+  setActionButtonLabel("sources", state.sourcesLabel || "Quality");
   setActionButtonLabel("episodes", state.episodesLabel || "Episodes");
   if (pipButton) {
     const pipLabel = String(state.pipLabel || "").trim();

@@ -237,20 +237,27 @@ async function allServerStreams(animeId, episode, servers) {
     const key = `${server.language}:${id}`;
     if (!id || seenServers.has(key)) continue;
     seenServers.add(key);
-    unique.push({ id, language: server.language, tip: server.tip || "" });
+    const rawName = server.name || server.label || id;
+    const cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    unique.push({ id, name: cleanName, language: server.language, tip: server.tip || "" });
   }
 
   const sourceRequests = new Map();
   for (const server of unique) {
-    if (!sourceRequests.has(server.id)) {
+    const reqKey = `${server.language}:${server.id}`;
+    if (!sourceRequests.has(reqKey)) {
+      const dubParam = server.language === "DUB" ? "&isDub=true" : "";
       const url =
         `${STREAM_BASE}/sources?id=${encodeURIComponent(animeId)}` +
-        `&epNum=${encodeURIComponent(episode)}&providerId=${encodeURIComponent(server.id)}`;
-      sourceRequests.set(server.id, retryJson(url, {}, 10000));
+        `&epNum=${encodeURIComponent(episode)}&providerId=${encodeURIComponent(server.id)}${dubParam}`;
+      sourceRequests.set(reqKey, retryJson(url, {}, 10000));
     }
   }
   const responses = await Promise.allSettled(
-    unique.map(async (server) => ({ server, data: await sourceRequests.get(server.id) }))
+    unique.map(async (server) => {
+      const reqKey = `${server.language}:${server.id}`;
+      return { server, data: await sourceRequests.get(reqKey) };
+    })
   );
 
   const streams = [];
@@ -264,11 +271,14 @@ async function allServerStreams(animeId, episode, servers) {
       const key = `${server.language}:${url}`;
       if (!url || seenUrls.has(key)) continue;
       seenUrls.add(key);
+      const isDub = server.language === "DUB";
+      const langLabel = isDub ? "English Dub" : "Japanese Sub";
+      const q = quality(source);
       streams.push({
-        name: `Requested Sites ${server.id} [${server.language}]`,
-        title: `${server.tip || "Anime stream"} ${server.language}`,
+        name: `${server.name} [${server.language}]`,
+        title: `${server.name} [${server.language}] • ${langLabel} (${q})`,
         url,
-        quality: quality(source),
+        quality: q,
         type: streamType(source),
         headers: data.headers || {},
         tracks: Array.isArray(data.tracks)
