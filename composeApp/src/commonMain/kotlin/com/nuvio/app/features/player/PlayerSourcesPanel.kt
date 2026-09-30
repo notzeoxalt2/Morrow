@@ -61,6 +61,7 @@ fun PlayerSourcesPanel(
 ) {
     val tokens = MaterialTheme.nuvio
     val addonGroups = streamsUiState.groups.filter { it.streams.isNotEmpty() || it.isLoading }
+        .sortedBy { com.nuvio.app.features.streams.providerDisplayName(it.addonName).lowercase() }
     LaunchedEffect(visible, addonGroups, streamsUiState.selectedFilter) {
         if (
             visible &&
@@ -132,7 +133,7 @@ fun PlayerSourcesPanel(
                     )
                     addonGroups.forEach { group ->
                         AddonFilterChip(
-                            label = group.addonName,
+                            label = com.nuvio.app.features.streams.providerDisplayName(group.addonName),
                             isSelected = streamsUiState.selectedFilter == group.addonId,
                             isLoading = group.isLoading,
                             hasError = group.error != null,

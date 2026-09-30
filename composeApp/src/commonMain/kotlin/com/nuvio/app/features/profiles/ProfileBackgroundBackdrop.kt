@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import com.nuvio.app.features.settings.AppIconRepository
+import com.nuvio.app.features.settings.AppIconOption
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,8 +33,17 @@ fun ProfileBackgroundBackdrop(
         MemberAccessRepository.access
     }.collectAsStateWithLifecycle()
     val backgroundCatalog by ProfileBackgroundRepository.catalog.collectAsStateWithLifecycle()
-    val profileColor = remember(profile?.avatarColorHex, colorOverride) {
-        colorOverride ?: profile?.avatarColorHex?.let(::parseHexColor) ?: Color(0xFF1E88E5)
+    val iconState by remember {
+        AppIconRepository.ensureLoaded()
+        AppIconRepository.state
+    }.collectAsStateWithLifecycle()
+    val profileColor = when (iconState.pending ?: iconState.selected) {
+        AppIconOption.ARCTIC_BLUE -> Color(0xFF42A5F5)
+        AppIconOption.EMERALD -> Color(0xFF43C790)
+        AppIconOption.ROSE_GOLD -> Color(0xFFE7A0AA)
+        AppIconOption.COPPER -> Color(0xFFD88C52)
+        AppIconOption.GRAPHITE -> Color(0xFF9BA3AE)
+        AppIconOption.ORIGINAL -> MaterialTheme.colorScheme.primary
     }
     val backgroundSelection = remember(
         profile?.profileBackgroundId,

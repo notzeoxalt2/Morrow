@@ -23,7 +23,10 @@ internal fun AppBrandWordmark(
     }.collectAsStateWithLifecycle()
     Image(
         painter = painterResource(
-            icon?.wordmarkResource ?: MaterialTheme.appTheme.wordmarkResource(state.selected),
+            icon?.wordmarkResource ?: (state.pending ?: state.selected).let { selected ->
+                if (selected == AppIconOption.ORIGINAL) MaterialTheme.appTheme.wordmarkResource(selected)
+                else selected.wordmarkResource
+            },
         ),
         contentDescription = contentDescription,
         modifier = modifier,

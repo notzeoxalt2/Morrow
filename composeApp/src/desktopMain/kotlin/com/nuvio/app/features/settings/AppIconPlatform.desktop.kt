@@ -9,7 +9,7 @@ import kotlin.system.exitProcess
 
 internal actual object AppIconPlatform {
     actual val isSupported: Boolean = true
-    actual val requiresCloseConfirmation: Boolean = true
+    actual val requiresCloseConfirmation: Boolean = DesktopHostOs.current == DesktopHostOs.MACOS
 
     private val store = DesktopStorage.store("nuvio_app_icon")
     private const val selectedIconKey = "selected_icon"
@@ -20,9 +20,7 @@ internal actual object AppIconPlatform {
         store.putString(selectedIconKey, name)
         when (DesktopHostOs.current) {
             DesktopHostOs.WINDOWS -> {
-                WindowsAppShortcutIconUpdater.updateAsync(AppIconOption.fromPlatformName(name)) {
-                    restartWindowsApp()
-                }
+                WindowsAppShortcutIconUpdater.updateAsync(AppIconOption.fromPlatformName(name)) {}
             }
             DesktopHostOs.MACOS -> {
                 MacAppIconUpdater.updateAsync(AppIconOption.fromPlatformName(name)) {

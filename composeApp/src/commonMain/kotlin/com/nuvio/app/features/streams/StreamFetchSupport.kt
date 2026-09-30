@@ -115,6 +115,7 @@ internal fun PluginRuntimeResult.toStreamItem(
         sourceName = scraper.name,
         addonName = addonName,
         addonId = addonId,
+        addonLogo = providerLogoUrl(scraper.name),
         streamType = normalizeStreamType(type),
         behaviorHints = if (requestHeaders.isEmpty()) {
             StreamBehaviorHints()
@@ -139,6 +140,8 @@ internal fun List<StreamItem>.sortedForGroupedDisplay(): List<StreamItem> =
     sortedWith(
         compareBy<StreamItem>(
             { it.sourceName.orEmpty().lowercase() },
+            { if (it.streamLabel.contains("[SUB]", true)) 0 else if (it.streamLabel.contains("[DUB]", true)) 1 else 2 },
+            { -Regex("(2160|1080|720|480|360)p").find(it.streamLabel + " " + it.streamSubtitle.orEmpty())?.groupValues?.get(1).let { it?.toIntOrNull() ?: 0 } },
             { it.streamLabel.lowercase() },
             { it.streamSubtitle.orEmpty().lowercase() },
         ),

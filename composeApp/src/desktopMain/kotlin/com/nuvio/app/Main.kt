@@ -123,6 +123,9 @@ fun main(args: Array<String>) {
                 window.requestFocus()
             }
             LaunchedEffect(window, appIconState.selected) {
+                com.nuvio.app.features.settings.WindowsAppShortcutIconUpdater.updateAsync(
+                    appIconState.selected, updateAllUsers = false, onComplete = {},
+                )
                 val backgroundSuffix = "-transparent"
                 val iconPath = "icons/app-icon-${appIconState.selected.key}$backgroundSuffix.png"
                 Thread.currentThread().contextClassLoader.getResourceAsStream(iconPath)?.use { stream ->

@@ -210,6 +210,7 @@ internal fun AddonFilterChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            com.nuvio.app.features.streams.ProviderLogo(label)
             if (isLoading) {
                 NuvioLoadingIndicator(
                     color = contentColor,

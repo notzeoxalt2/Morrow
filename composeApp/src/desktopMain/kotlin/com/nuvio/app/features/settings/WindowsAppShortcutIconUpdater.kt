@@ -7,24 +7,24 @@ import java.nio.file.StandardCopyOption
 import java.util.concurrent.TimeUnit
 
 internal object WindowsAppShortcutIconUpdater {
-    fun updateAsync(icon: AppIconOption, onComplete: () -> Unit) {
+    fun updateAsync(icon: AppIconOption, updateAllUsers: Boolean = true, onComplete: () -> Unit) {
         Thread({
             try {
-                update(icon)
+                update(icon, updateAllUsers)
             } finally {
                 onComplete()
             }
         }, "Nuvio Windows app icon updater").apply { isDaemon = false }.start()
     }
 
-    private fun update(icon: AppIconOption) {
+    private fun update(icon: AppIconOption, updateAllUsers: Boolean) {
         if (DesktopHostOs.current != DesktopHostOs.WINDOWS) return
         runCatching {
             val resource = "icons/app-icon-${icon.key}-transparent.ico"
             val localAppData = knownFolder("LocalApplicationData") ?: return@runCatching
             val iconDirectory = localAppData.resolve("Morrow/icons")
             Files.createDirectories(iconDirectory)
-            val iconFile = iconDirectory.resolve("app-icon-${icon.key}-transparent.ico")
+            val iconFile = iconDirectory.resolve("app-icon-${icon.key}-transparent-v2.ico")
             Thread.currentThread().contextClassLoader.getResourceAsStream(resource)?.use { input ->
                 Files.copy(input, iconFile, StandardCopyOption.REPLACE_EXISTING)
             } ?: return@runCatching
@@ -38,7 +38,7 @@ internal object WindowsAppShortcutIconUpdater {
                 elevatedRoots.any { root -> shortcut.toAbsolutePath().normalize().startsWith(root) }
             }
             shortcuts.filterNot(elevated::contains).forEach { setShortcutIcon(it, iconFile) }
-            if (elevated.isNotEmpty()) setShortcutIconsElevated(elevated, iconFile)
+            if (updateAllUsers && elevated.isNotEmpty()) setShortcutIconsElevated(elevated, iconFile)
         }
     }
 

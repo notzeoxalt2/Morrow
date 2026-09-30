@@ -21,6 +21,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.streams.LocalStreamSizeLabelFormat
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
+import com.nuvio.app.features.streams.sortedForGroupedDisplay
 import com.nuvio.app.features.streams.StreamCard
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamsUiState
@@ -53,7 +54,9 @@ internal fun PlayerStreamList(
         StreamBadgeSettingsRepository.ensureLoaded()
         StreamBadgeSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
-    val streams = streamsUiState.allStreams
+    val streams = streamsUiState.filteredGroups
+        .sortedBy { com.nuvio.app.features.streams.providerDisplayName(it.addonName).lowercase() }
+        .flatMap { it.streams.sortedForGroupedDisplay() }
     val visibleGroups = streamsUiState.filteredGroups
 
     when {

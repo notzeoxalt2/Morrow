@@ -224,7 +224,11 @@ actual object LocalStreamProxy {
         headers.forEach { (name, value) ->
             reqBuilder.header(name, value)
         }
-        if (!rangeHeader.isNullOrBlank()) {
+        val targetPath = runCatching { URI(targetUrl).path.orEmpty() }.getOrDefault("")
+        val isManifestRoute = targetPath.endsWith(".m3u8", ignoreCase = true) ||
+            targetPath.startsWith("/m3u8/", ignoreCase = true)
+        // Playlist resolvers reject byte ranges; media segments still need Range for seeking.
+        if (!rangeHeader.isNullOrBlank() && !isManifestRoute) {
             reqBuilder.header("Range", rangeHeader)
         }
 

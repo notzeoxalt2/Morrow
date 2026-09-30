@@ -807,6 +807,7 @@ internal fun ProviderFilterRow(
     modifier: Modifier = Modifier,
 ) {
     val addonGroups = groups.filter { it.streams.isNotEmpty() || it.isLoading }
+        .sortedBy { providerDisplayName(it.addonName).lowercase() }
     val scrollState = rememberScrollState()
 
     Row(
@@ -831,7 +832,7 @@ internal fun ProviderFilterRow(
         )
         addonGroups.forEach { group ->
             FilterChip(
-                label = group.addonName,
+                label = providerDisplayName(group.addonName),
                 isSelected = selectedFilter == group.addonId,
                 onClick = { onFilterSelected(group.addonId) },
             )
@@ -902,6 +903,7 @@ private fun FilterChip(
                 )
             }
             if (label != null) {
+                ProviderLogo(label)
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelMedium.copy(
@@ -1055,7 +1057,7 @@ internal fun StreamList(
 }
 
 private fun buildStreamSectionRenderModels(groups: List<AddonStreamGroup>): List<StreamSectionRenderModel> =
-    groups
+    groups.sortedBy { providerDisplayName(it.addonName).lowercase() }
         .withDuplicateSafeLazyKeys { group -> streamSectionRenderKey(group) }
         .map { keyedGroup ->
             val group = keyedGroup.value
@@ -1071,7 +1073,7 @@ private fun buildStreamSectionRenderModels(groups: List<AddonStreamGroup>): List
                         sourceKey = streamSourceRenderKey(sectionKey = sectionKey, sourceName = sourceName),
                         sourceName = sourceName,
                         streams = streamsBySource[sourceName]
-                            .orEmpty()
+                            .orEmpty().sortedForGroupedDisplay()
                             .withDuplicateSafeLazyKeys { stream ->
                                 streamCardRenderKey(
                                     sectionKey = sectionKey,
@@ -1231,7 +1233,7 @@ private fun StreamSectionHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            text = addonName,
+            text = providerDisplayName(addonName),
             style = MaterialTheme.typography.bodyMedium.copy(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,

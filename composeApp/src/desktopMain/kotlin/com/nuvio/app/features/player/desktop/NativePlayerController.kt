@@ -88,6 +88,7 @@ internal class NativePlayerController(
 
     @Volatile
     private var pendingSource: PendingSource? = null
+    @Volatile private var activeHandleSource: PendingSource? = null
     @Volatile
     private var releaseRequested: Boolean = false
     private val createsInFlight = mutableSetOf<Thread>()
@@ -308,6 +309,7 @@ internal class NativePlayerController(
                 }.onSuccess { created ->
                     val accepted = synchronized(lifecycleLock) {
                         if (!releaseRequested && terminalReleaseFailure == null && pendingSource === pending) {
+                            activeHandleSource = pending
                             handle = created
                             true
                         } else {
@@ -640,8 +642,16 @@ internal class NativePlayerController(
         NativePlayerBridge.setSpeed(current, next)
     }
 
-    fun snapshot(): PlayerPlaybackSnapshot {
-        val current = handle
+    fun snapshot(expectedSourceUrl: String? = null): PlayerPlaybackSnapshot {
+        val current = synchronized(lifecycleLock) {
+            val source = pendingSource
+            // The preceding episode may still be tearing down; never report its ended/position state.
+            if (source == null || activeHandleSource !== source ||
+                (expectedSourceUrl != null && source.sourceUrl != expectedSourceUrl)) {
+                return PlayerPlaybackSnapshot(isLoading = true)
+            }
+            handle
+        }
         if (current == 0L) return PlayerPlaybackSnapshot(isLoading = true)
         return runCatching {
             val isLoading = NativePlayerBridge.isLoading(current)

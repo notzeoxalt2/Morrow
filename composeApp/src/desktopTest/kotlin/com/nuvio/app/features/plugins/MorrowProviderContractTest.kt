@@ -14,6 +14,61 @@ import kotlin.test.assertTrue
 
 class MorrowProviderContractTest {
     @Test
+    fun liveKickAssAnimeUsesPublishedPlayerManifest() = runBlocking {
+        assumeTrue(System.getenv("MORROW_LIVE_PROVIDER_TEST") == "1")
+        val file = File(System.getenv("MORROW_KAA_SCRIPT") ?: "missing-kaa-script")
+        assumeTrue(file.isFile)
+        val streams = PluginRuntime.executePlugin(code = file.readText(), tmdbId = "1429", mediaType = "tv",
+            season = 1, episode = 1, scraperId = "kaa-live", respectSearchPause = false)
+        assertTrue(streams.isNotEmpty())
+        assertTrue(streams.all { it.title.contains("Episode 1") && it.provider == "KickAssAnime" })
+        val source = streams.first()
+        val script = System.getenv("MORROW_NATIVE_DECODE_SCRIPT") ?: return@runBlocking
+        val library = System.getenv("MORROW_NATIVE_MPV_DLL") ?: return@runBlocking
+        val url = com.nuvio.app.features.player.LocalStreamProxy.wrapUrl(source.url, source.headers)
+        val process = ProcessBuilder("python", script, library, url).start()
+        val finished = process.waitFor(45, java.util.concurrent.TimeUnit.SECONDS)
+        if (!finished) process.destroyForcibly()
+        assertTrue(finished)
+        val result = process.inputStream.bufferedReader().readText().trim()
+        assertEquals(0, process.exitValue(), "KAA native decode failed: $result")
+        println("KickAssAnime real manifest + native proxy/libmpv: $result")
+    }
+
+    @Test
+    fun liveAnikageUsesExactAnimeAndNativeProxy() = runBlocking {
+        assumeTrue("Live verification is opt-in", System.getenv("MORROW_LIVE_PROVIDER_TEST") == "1")
+        val file = File(System.getenv("MORROW_ANIKAGE_SCRIPT") ?: "missing-anikage-script")
+        assumeTrue(file.isFile)
+        val scraper = PluginScraper(id = "anikage-live-mapping", repositoryUrl = "https://example.test/manifest.json",
+            name = "Anikage", description = "Contract test", version = "test", filename = "anikage.js",
+            supportedTypes = listOf("anime"), enabled = true, manifestEnabled = true, code = file.readText())
+        for ((lookup, ep) in listOf("anilist:21" to 1, "mal:34566" to 3)) {
+            val sources = PluginRepository.executeScraper(scraper, lookup, "anime", 1, ep).getOrThrow()
+            assertTrue(sources.isNotEmpty(), "Anikage $lookup E$ep returned no validated sources")
+            println("Anikage exact identity: $lookup E$ep "+sources.size+" validated sources")
+            for (language in listOf("ja", "en")) {
+                val source = sources.firstOrNull { it.language == language && it.name?.startsWith("Koto /") == true }
+                    ?: sources.firstOrNull { it.language == language }
+                if (source == null) {
+                    println("Anikage $lookup E$ep: no validated $language source available")
+                    continue
+                }
+                val decodeScript = System.getenv("MORROW_NATIVE_DECODE_SCRIPT") ?: continue
+                val library = System.getenv("MORROW_NATIVE_MPV_DLL") ?: continue
+                val url = com.nuvio.app.features.player.LocalStreamProxy.wrapUrl(source.url, source.headers)
+                val process = ProcessBuilder("python", decodeScript, library, url).start()
+                val finished = process.waitFor(45, java.util.concurrent.TimeUnit.SECONDS)
+                if (!finished) process.destroyForcibly()
+                assertTrue(finished, "Anikage decoder timed out")
+                val result = process.inputStream.bufferedReader().readText().trim()
+                assertEquals(0, process.exitValue(), "Anikage $lookup E$ep $language decode failed: $result")
+                println("Anikage native proxy + libmpv: $lookup E$ep $language $result")
+            }
+        }
+    }
+
+    @Test
     fun liveAnimeIdsReachProviderThroughRepositoryConversion() = runBlocking {
         assumeTrue("Live verification is opt-in", System.getenv("MORROW_LIVE_PROVIDER_TEST") == "1")
         val file = File(System.getenv("MORROW_MIRURO_SCRIPT") ?: "missing-miruro-script")

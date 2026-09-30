@@ -521,6 +521,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     playerControllerSourceUrl = surfaceSource?.sourceUrl
                 },
                 onSnapshot = { snapshot ->
+                    if (surfaceSource?.sourceUrl != activeSourceUrl) return@PlatformPlayerSurface
                     playbackSnapshot = snapshot
                     refreshAudioTracksIfChanged()
                     if (!snapshot.isLoading) initialLoadCompleted = true

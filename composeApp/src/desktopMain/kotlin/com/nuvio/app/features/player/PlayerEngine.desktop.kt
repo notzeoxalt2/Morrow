@@ -248,9 +248,9 @@ private fun NativePlayerSurface(
         }
     }
 
-    LaunchedEffect(controller) {
+    LaunchedEffect(controller, sourceUrl, sourceAvailable) {
         while (true) {
-            onSnapshot(controller.snapshot())
+            onSnapshot(controller.snapshot(sourceUrl))
             delay(500L)
         }
     }
