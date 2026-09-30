@@ -25,6 +25,7 @@ import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.p2p.P2pConsentDialog
 import com.nuvio.app.features.p2p.P2pSettingsRepository
+import com.nuvio.app.features.player.LocalStreamProxy
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.player.PlayerLaunchStore
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -454,11 +455,17 @@ internal fun StreamDestination(
                 contentLanguage = resolveLaunchContentLanguage(),
             )
         }
+        val sanitizedRequestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
+        val playbackSourceUrl = if (!sanitizedRequestHeaders.isNullOrEmpty()) {
+            LocalStreamProxy.wrapUrl(sourceUrl, sanitizedRequestHeaders)
+        } else {
+            sourceUrl
+        }
         val playerLaunch = PlayerLaunch(
             profileId = launch.profileId,
             title = launch.title,
-            sourceUrl = sourceUrl,
-            sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+            sourceUrl = playbackSourceUrl,
+            sourceHeaders = sanitizedRequestHeaders,
             sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
             externalSubtitles = stream.externalSubtitles,
             streamType = stream.streamType,
@@ -602,11 +609,17 @@ internal fun StreamDestination(
                 contentLanguage = resolveLaunchContentLanguage(),
             )
         }
+        val sanitizedRequestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
+        val playbackSourceUrl = if (!sanitizedRequestHeaders.isNullOrEmpty()) {
+            LocalStreamProxy.wrapUrl(sourceUrl, sanitizedRequestHeaders)
+        } else {
+            sourceUrl
+        }
         val playerLaunch = PlayerLaunch(
             profileId = launch.profileId,
             title = launch.title,
-            sourceUrl = sourceUrl,
-            sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+            sourceUrl = playbackSourceUrl,
+            sourceHeaders = sanitizedRequestHeaders,
             sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
             externalSubtitles = stream.externalSubtitles,
             streamType = stream.streamType,

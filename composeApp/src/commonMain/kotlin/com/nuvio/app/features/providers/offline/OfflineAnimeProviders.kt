@@ -74,11 +74,8 @@ object OfflineAnimeProviders {
     fun unpackJs(packed: String): String {
         val idx = packed.indexOf("eval(function(p,a,c,k,e,d)")
         if (idx == -1) return packed
-        val endIdx = packed.indexOf(".split('|')))", idx)
-        if (endIdx == -1) return packed
-
-        val snippet = packed.substring(idx + "eval(function(p,a,c,k,e,d){".length, endIdx)
-        val match = Regex("""return p\}\('(.*?)',(\d+),(\d+),'(.*?)'$""", RegexOption.DOT_MATCHES_ALL).find(snippet)
+        val match = Regex("""return p\}\('(.*?)',(\d+),(\d+),'(.*?)'(\.split\('\|'\))?""", RegexOption.DOT_MATCHES_ALL).find(packed)
+            ?: Regex("""return p\}\('(.*?)',(\d+),(\d+),'(.*?)'""", RegexOption.DOT_MATCHES_ALL).find(packed)
             ?: return packed
         val (p, aStr, _, kStr) = match.destructured
         val radix = aStr.toIntOrNull() ?: 36
@@ -462,12 +459,12 @@ object OfflineAnimeProviders {
                             val rawDataSrc = match.groupValues[1].trim()
                             val serverName = match.groupValues[2].trim()
                             val decodedUrl = runCatching { decodeBase64Safe(rawDataSrc) }.getOrNull() ?: ""
-                            if (decodedUrl.isBlank() || !decodedUrl.startsWith("http")) return@async null
+                            if (decodedUrl.isBlank() || !decodedUrl.startsWith("http")) return@async emptyList<StreamItem>()
 
                             resolveAnimeDekhoServer(clean, episodeNumber, serverName, decodedUrl, epUrl)
                         }
                     }
-                    streams.addAll(jobs.awaitAll().filterNotNull())
+                    streams.addAll(jobs.awaitAll().flatten())
                 }
             } catch (e: Throwable) {
                 log.w(e) { "AnimeDekho scraping failed" }
@@ -481,14 +478,59 @@ object OfflineAnimeProviders {
             serverName: String,
             embedUrl: String,
             referer: String,
-        ): StreamItem? {
-            return try {
+        ): List<StreamItem> {
+            val results = mutableListOf<StreamItem>()
+            try {
                 val embedHtml = httpGetTextWithHeaders(
                     embedUrl,
                     mapOf("User-Agent" to "Mozilla/5.0", "Referer" to referer)
                 )
 
-                // Check for Vidmoly
+                // 1. NeoCDN (direct 1080p, 720p, 360p MP4)
+                if (serverName.contains("NeoCDN", ignoreCase = true) || embedUrl.contains("play.php")) {
+                    val fetchId = Regex("""/aaa/myth/fetch\.php\?id=([a-zA-Z0-9_\-]+)""").find(embedHtml)?.groupValues?.get(1)
+                    if (fetchId != null) {
+                        val fetchJsonStr = runCatching {
+                            httpGetTextWithHeaders(
+                                "https://animedekho.app/aaa/myth/fetch.php?id=$fetchId",
+                                mapOf("User-Agent" to "Mozilla/5.0", "Referer" to embedUrl)
+                            )
+                        }.getOrNull()
+                        if (fetchJsonStr != null) {
+                            val fetchJson = json.parseToJsonElement(fetchJsonStr).jsonObject
+                            val sources = fetchJson["sources"]?.jsonArray.orEmpty()
+                            for (src in sources) {
+                                val obj = src.jsonObject
+                                val u = obj["url"]?.jsonPrimitive?.content ?: continue
+                                val q = obj["type"]?.jsonPrimitive?.content ?: "1080p"
+                                val sz = obj["size"]?.jsonPrimitive?.content ?: ""
+                                results.add(
+                                    StreamItem(
+                                        name = "AnimeDekho · NeoCDN ($q)",
+                                        title = "$title - Ep $episodeNumber · NeoCDN ($q) $sz",
+                                        description = "AnimeDekho • NeoCDN Direct MP4",
+                                        url = u,
+                                        addonName = "AnimeDekho",
+                                        addonId = "offline:animedekho",
+                                        streamType = "mp4",
+                                        behaviorHints = StreamBehaviorHints(
+                                            proxyHeaders = StreamProxyHeaders(
+                                                request = mapOf(
+                                                    "Referer" to "https://animedekho.app/",
+                                                    "Origin" to "https://animedekho.app",
+                                                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            }
+                            if (results.isNotEmpty()) return results
+                        }
+                    }
+                }
+
+                // 2. Vidmoly
                 if (serverName.equals("Vidmoly", ignoreCase = true) || embedHtml.contains("vidmoly")) {
                     val iframeSrc = Regex("""<iframe[^>]*src=["'](https?://[^"']*vidmoly[^"']*)["']""", RegexOption.IGNORE_CASE).find(embedHtml)?.groupValues?.get(1)
                         ?: if (embedUrl.contains("vidmoly")) embedUrl else null
@@ -505,30 +547,33 @@ object OfflineAnimeProviders {
                                 listOf(StreamSubtitle(url = vtt.groupValues[1], language = "en", name = vtt.groupValues[2]))
                             } else emptyList()
 
-                            return StreamItem(
-                                name = "AnimeDekho · Vidmoly [SUB/DUB]",
-                                title = "$title - Ep $episodeNumber · Vidmoly (1080p)",
-                                description = "AnimeDekho • Vidmoly Direct HLS",
-                                url = m3u8,
-                                addonName = "AnimeDekho",
-                                addonId = "offline:animedekho",
-                                streamType = "m3u8",
-                                behaviorHints = StreamBehaviorHints(
-                                    proxyHeaders = StreamProxyHeaders(
-                                        request = mapOf(
-                                            "Referer" to "https://vidmoly.biz/",
-                                            "Origin" to "https://vidmoly.biz",
-                                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                            results.add(
+                                StreamItem(
+                                    name = "AnimeDekho · Vidmoly [SUB/DUB]",
+                                    title = "$title - Ep $episodeNumber · Vidmoly (1080p)",
+                                    description = "AnimeDekho • Vidmoly Direct HLS",
+                                    url = m3u8,
+                                    addonName = "AnimeDekho",
+                                    addonId = "offline:animedekho",
+                                    streamType = "m3u8",
+                                    behaviorHints = StreamBehaviorHints(
+                                        proxyHeaders = StreamProxyHeaders(
+                                            request = mapOf(
+                                                "Referer" to "https://vidmoly.biz/",
+                                                "Origin" to "https://vidmoly.biz",
+                                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                                            )
                                         )
-                                    )
-                                ),
-                                externalSubtitles = subs,
+                                    ),
+                                    externalSubtitles = subs,
+                                )
                             )
+                            return results
                         }
                     }
                 }
 
-                // Check for SRuby (StreamRuby)
+                // 3. SRuby (StreamRuby Multi-Audio)
                 if (serverName.equals("SRuby", ignoreCase = true) || embedHtml.contains("rubystm")) {
                     val iframeSrc = Regex("""<iframe[^>]*src=["'](https?://[^"']*rubystm[^"']*)["']""", RegexOption.IGNORE_CASE).find(embedHtml)?.groupValues?.get(1)
                     if (iframeSrc != null) {
@@ -547,50 +592,53 @@ object OfflineAnimeProviders {
                         val unpacked = unpackJs(rawResp.body)
                         val m3u8 = Regex("""https?://[^\s"'<>]+\.m3u8[^\s"'<>]*""").find(unpacked)?.value
                         if (m3u8 != null) {
-                            return StreamItem(
-                                name = "AnimeDekho · SRuby [Multi-Audio]",
-                                title = "$title - Ep $episodeNumber · SRuby | 🗣️ Multi-Audio (Hindi/Eng/Jap)",
-                                description = "AnimeDekho • SRuby Multi-Audio Stream",
-                                url = m3u8,
-                                addonName = "AnimeDekho",
-                                addonId = "offline:animedekho",
-                                streamType = "m3u8",
-                                behaviorHints = StreamBehaviorHints(
-                                    proxyHeaders = StreamProxyHeaders(
-                                        request = mapOf(
-                                            "Referer" to "https://rubystm.com/",
-                                            "Origin" to "https://rubystm.com",
-                                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                            results.add(
+                                StreamItem(
+                                    name = "AnimeDekho · SRuby [Multi-Audio]",
+                                    title = "$title - Ep $episodeNumber · SRuby | 🗣️ Multi-Audio (Hindi/Eng/Jap)",
+                                    description = "AnimeDekho • SRuby Multi-Audio Stream",
+                                    url = m3u8,
+                                    addonName = "AnimeDekho",
+                                    addonId = "offline:animedekho",
+                                    streamType = "m3u8",
+                                    behaviorHints = StreamBehaviorHints(
+                                        proxyHeaders = StreamProxyHeaders(
+                                            request = mapOf(
+                                                "Referer" to "https://rubystm.com/",
+                                                "Origin" to "https://rubystm.com",
+                                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                                            )
                                         )
-                                    )
-                                ),
+                                    ),
+                                )
                             )
+                            return results
                         }
                     }
                 }
 
-                // Generic direct / iframe fallback
+                // 4. Generic direct / iframe fallback
                 val directM3u8 = Regex("""["'](https?://[^"']+\.m3u8[^"']*)["']""").find(embedHtml)?.groupValues?.get(1)
                 if (directM3u8 != null) {
-                    return StreamItem(
-                        name = "AnimeDekho · $serverName",
-                        title = "$title - Ep $episodeNumber · $serverName (1080p)",
-                        description = "AnimeDekho • $serverName Stream",
-                        url = directM3u8,
-                        addonName = "AnimeDekho",
-                        addonId = "offline:animedekho",
-                        streamType = "m3u8",
-                        behaviorHints = StreamBehaviorHints(
-                            proxyHeaders = StreamProxyHeaders(
-                                request = mapOf("Referer" to embedUrl, "Origin" to BASE)
-                            )
-                        ),
+                    results.add(
+                        StreamItem(
+                            name = "AnimeDekho · $serverName",
+                            title = "$title - Ep $episodeNumber · $serverName (1080p)",
+                            description = "AnimeDekho • $serverName Stream",
+                            url = directM3u8,
+                            addonName = "AnimeDekho",
+                            addonId = "offline:animedekho",
+                            streamType = "m3u8",
+                            behaviorHints = StreamBehaviorHints(
+                                proxyHeaders = StreamProxyHeaders(
+                                    request = mapOf("Referer" to embedUrl, "Origin" to BASE)
+                                )
+                            ),
+                        )
                     )
                 }
-                null
-            } catch (_: Throwable) {
-                null
-            }
+            } catch (_: Throwable) {}
+            return results
         }
     }
 
