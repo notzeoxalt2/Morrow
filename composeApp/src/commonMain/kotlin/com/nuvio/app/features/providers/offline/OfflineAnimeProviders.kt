@@ -915,7 +915,7 @@ object OfflineAnimeProviders {
                     val t = a["title"]?.jsonObject
                     val rom = t?.get("romaji")?.jsonPrimitive?.content?.lowercase()?.filter { it.isLetterOrDigit() } ?: ""
                     val eng = t?.get("english")?.jsonPrimitive?.content?.lowercase()?.filter { it.isLetterOrDigit() } ?: ""
-                    rom.contains(normTitle) || eng.contains(normTitle) || normTitle.contains(rom) || normTitle.contains(eng)
+                    rom.contains(normTitle) || eng.contains(normTitle) || (rom.isNotBlank() && normTitle.contains(rom)) || (eng.isNotBlank() && normTitle.contains(eng))
                 }?.jsonObject ?: animeList.first().jsonObject
 
                 val slug = animeObj["slug"]?.jsonPrimitive?.content ?: return AnidapScraper.getStreams(title, episodeNumber, "Anikage", "offline:anikage")
@@ -945,11 +945,11 @@ object OfflineAnimeProviders {
 
                 coroutineScope {
                     val jobs = mutableListOf<Deferred<List<StreamItem>?>>()
-                    val subServers = serverList.filter { "sub" in it.subTypes }.take(4)
+                    val subServers = serverList.filter { "sub" in it.subTypes }
                     for (s in subServers) {
                         jobs.add(async { fetchSources(clean, slug, episodeNumber, s.providerId, "sub") })
                     }
-                    val dubServers = serverList.filter { "dub" in it.subTypes }.take(3)
+                    val dubServers = serverList.filter { "dub" in it.subTypes }
                     for (s in dubServers) {
                         jobs.add(async { fetchSources(clean, slug, episodeNumber, s.providerId, "dub") })
                     }
@@ -1002,7 +1002,7 @@ object OfflineAnimeProviders {
             subType: String,
         ): List<StreamItem>? {
             return try {
-                val url = "$BASE/api/media/anime/$slug/episodes/$episodeNumber/sources?provider=$providerId&subType=$subType"
+                val url = "$BASE/api/media/anime/$slug/episodes/$episodeNumber/sources?provider=$providerId&type=$subType"
                 val resp = httpGetTextWithHeaders(url, mapOf("User-Agent" to "Mozilla/5.0", "Accept" to "application/json"))
                 val root = json.parseToJsonElement(resp).jsonObject
 
@@ -1020,20 +1020,29 @@ object OfflineAnimeProviders {
                     val sObj = subElem.jsonObject
                     val file = sObj["file"]?.jsonPrimitive?.content ?: return@mapNotNull null
                     val label = sObj["label"]?.jsonPrimitive?.content ?: "English"
-                    StreamSubtitle(url = file, language = label.take(2).lowercase(), name = label)
+                    StreamSubtitle(
+                        url = if (file.startsWith("http")) file else "https://og.bakayaro.live/m3u8/$file",
+                        language = label.take(2).lowercase(), name = label
+                    )
                 }
 
                 val streams = mutableListOf<StreamItem>()
                 val sources = root["sources"]?.jsonArray.orEmpty()
                 for (src in sources) {
                     val srcObj = src.jsonObject
-                    val srcUrl = srcObj["url"]?.jsonPrimitive?.content ?: continue
+                    val rawSourceUrl = srcObj["url"]?.jsonPrimitive?.content ?: continue
+                    val isHls = srcObj["isM3U8"]?.jsonPrimitive?.booleanOrNull ?: true
+                    val srcUrl = if (rawSourceUrl.startsWith("http://") || rawSourceUrl.startsWith("https://")) {
+                        rawSourceUrl
+                    } else {
+                        "https://og.bakayaro.live/${if (isHls) "m3u8" else "stream"}/$rawSourceUrl"
+                    }
                     val server = srcObj["server"]?.jsonPrimitive?.content
                         ?: srcObj["quality"]?.jsonPrimitive?.content
                         ?: cleanProvName
                     val quality = srcObj["resolution"]?.jsonPrimitive?.content ?: "1080p"
 
-                    if (srcUrl.contains(".m3u8") || srcUrl.contains(".mp4")) {
+                    if (srcUrl.startsWith("https://") || srcUrl.startsWith("http://")) {
                         streams.add(
                             StreamItem(
                                 name = "Anikage · $server $audioTag",
@@ -1042,7 +1051,7 @@ object OfflineAnimeProviders {
                                 url = srcUrl,
                                 addonName = "Anikage",
                                 addonId = "offline:anikage",
-                                streamType = if (srcUrl.contains(".m3u8")) "m3u8" else "mp4",
+                                streamType = if (isHls) "m3u8" else "mp4",
                                 behaviorHints = StreamBehaviorHints(
                                     proxyHeaders = StreamProxyHeaders(
                                         request = mapOf(
@@ -1600,7 +1609,7 @@ object OfflineAnimeProviders {
                 }
 
                 coroutineScope {
-                    val subJobs = subServers.take(4).map { prov ->
+                    val subJobs = subServers.map { prov ->
                         async {
                             runCatching {
                                 val srcResp = httpGetTextWithHeaders(
@@ -1643,7 +1652,7 @@ object OfflineAnimeProviders {
                         }
                     }
 
-                    val dubJobs = dubServers.take(3).map { prov ->
+                    val dubJobs = dubServers.map { prov ->
                         async {
                             runCatching {
                                 val srcResp = httpGetTextWithHeaders(
@@ -1750,7 +1759,7 @@ object OfflineAnimeProviders {
             if (hash.isBlank()) continue
 
             val streamUrl = runCatching { decodeBase64Safe(hash) }.getOrNull() ?: ""
-            if (!streamUrl.startsWith("http")) continue
+            if (!streamUrl.startsWith("http") || (!streamUrl.contains(".m3u8") && !streamUrl.contains(".mp4"))) continue
 
             val isDub = type == "dub"
             val typeTag = if (isDub) "[DUB]" else "[SUB]"

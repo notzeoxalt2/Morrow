@@ -661,6 +661,8 @@ actual object PluginRepository {
         val stored = loadStoredState(profileId)
         var requiresMigration = false
         val legacyRepoUrls = setOf(
+            "https://raw.githubusercontent.com/notzeoxalt2/morrowx2anime/main/manifest.json",
+            "https://raw.githubusercontent.com/notzeoxalt2/morrowx2anime/refs/heads/main/manifest.json",
             "https://raw.githubusercontent.com/notzeoxalt2/Morrow/main/providers/manifest.json",
             "https://raw.githubusercontent.com/D3adlyRocket/All-in-One-Nuvio/refs/heads/main/manifest.json",
             "https://raw.githubusercontent.com/yoruix/nuvio-providers/refs/heads/main/manifest.json",
@@ -682,9 +684,7 @@ actual object PluginRepository {
         val scrapers = rawScrapers.filterNot { it.repositoryUrl in legacyRepoUrls }
         val defaultPluginRepoUrls = listOf(
             "https://raw.githubusercontent.com/notzeoxalt2/morrowx1movies/main/manifest.json",
-            "https://raw.githubusercontent.com/notzeoxalt2/morrowx1anime/main/manifest.json",
-            "https://raw.githubusercontent.com/notzeoxalt2/morrowx2anime/main/manifest.json",
-        )
+            "https://raw.githubusercontent.com/notzeoxalt2/morrowx1anime/main/manifest.json",        )
         val storedRepos = stored?.repositories?.filterNot { it.manifestUrl in legacyRepoUrls }
         if (stored?.repositories?.any { it.manifestUrl in legacyRepoUrls } == true) {
             requiresMigration = true
@@ -696,7 +696,7 @@ actual object PluginRepository {
                 manifestUrl = url,
                 name = when {
                     url.contains("morrowx1movies") -> "Morrow Movies & TV"
-                    url.contains("morrowx1anime") -> "Morrow Anime 1 - Core"
+                    url.contains("morrowx1anime") -> "Morrow Anime X1"
                     url.contains("morrowx2anime") -> "Morrow Anime 2 - Regional & Dub"
                     else -> url.substringBefore("?").substringAfterLast('/')
                 },
@@ -715,7 +715,7 @@ actual object PluginRepository {
                     manifestUrl = it.manifestUrl,
                     name = when {
                         it.manifestUrl.contains("morrowx1movies") -> "Morrow Movies & TV"
-                        it.manifestUrl.contains("morrowx1anime") -> "Morrow Anime 1 - Core"
+                        it.manifestUrl.contains("morrowx1anime") -> "Morrow Anime X1"
                         it.manifestUrl.contains("morrowx2anime") -> "Morrow Anime 2 - Regional & Dub"
                         else -> it.name
                     },

@@ -63,7 +63,7 @@ actual object LocalStreamProxy {
 
     actual fun wrapUrl(targetUrl: String, headers: Map<String, String>?): String {
         if (headers.isNullOrEmpty() || targetUrl.isBlank()) return targetUrl
-        if (targetUrl.startsWith("http://127.0.0.1:") || targetUrl.startsWith("http://localhost:")) return targetUrl
+        if (boundPort > 0 && (targetUrl.startsWith("http://127.0.0.1:$boundPort/stream?") || targetUrl.startsWith("http://localhost:$boundPort/stream?"))) return targetUrl
         val port = start()
         if (port <= 0) return targetUrl
 
@@ -193,7 +193,14 @@ actual object LocalStreamProxy {
                 }
 
                 val customHeaders = decodeHeaders(encodedHeaders)
-                proxyRequest(s, method, targetUrl, customHeaders, rangeHeader)
+                try {
+                    proxyRequest(s, method, targetUrl, customHeaders, rangeHeader)
+                } catch (e: java.io.IOException) {
+                    log.w { "Stream proxy upstream request failed: ${e.javaClass.simpleName}" }
+                    s.getOutputStream().write(
+                        "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(StandardCharsets.UTF_8)
+                    )
+                }
             }
         } catch (_: Throwable) {
             // Client closed connection (normal during seek / stop)
@@ -221,7 +228,7 @@ actual object LocalStreamProxy {
             reqBuilder.header("Range", rangeHeader)
         }
 
-        val upstreamResp = httpClient.newCall(reqBuilder.build()).execute()
+        httpClient.newCall(reqBuilder.build()).execute().use { upstreamResp ->
         val code = upstreamResp.code
         val message = upstreamResp.message.ifBlank { "OK" }
         val contentType = upstreamResp.header("Content-Type", "").orEmpty()
@@ -233,7 +240,7 @@ actual object LocalStreamProxy {
 
         if (isM3u8 && code in 200..299 && !method.equals("HEAD", ignoreCase = true)) {
             val bodyText = upstreamResp.body?.string().orEmpty()
-            val rewritten = rewriteM3u8(bodyText, targetUrl, headers)
+            val rewritten = rewriteM3u8(bodyText, upstreamResp.request.url.toString(), headers)
             val bodyBytes = rewritten.toByteArray(StandardCharsets.UTF_8)
 
             val head = "HTTP/1.1 200 OK\r\n" +
@@ -271,6 +278,7 @@ actual object LocalStreamProxy {
                 }
             }
         }
+        }
     }
 
     private fun rewriteM3u8(
@@ -284,24 +292,17 @@ actual object LocalStreamProxy {
             val trimmed = line.trim()
             when {
                 trimmed.isEmpty() -> sb.append("\n")
-                trimmed.startsWith("#EXT-X-KEY:", ignoreCase = true) -> {
-                    val rewritten = Regex("""URI=["']([^"']+)["']""").replace(trimmed) { mr ->
-                        val keyUri = mr.groupValues[1]
-                        val resolved = resolveRelativeUrl(baseUrl, keyUri)
-                        """URI="${wrapUrl(resolved, headers)}""""
-                    }
-                    sb.append(rewritten).append("\n")
-                }
-                trimmed.startsWith("#EXT-X-MAP:", ignoreCase = true) -> {
-                    val rewritten = Regex("""URI=["']([^"']+)["']""").replace(trimmed) { mr ->
-                        val mapUri = mr.groupValues[1]
-                        val resolved = resolveRelativeUrl(baseUrl, mapUri)
-                        """URI="${wrapUrl(resolved, headers)}""""
-                    }
-                    sb.append(rewritten).append("\n")
-                }
                 trimmed.startsWith("#") -> {
-                    sb.append(trimmed).append("\n")
+                    // Audio, subtitles, iframe variants, keys and init segments all carry URI attributes.
+                    val rewritten = Regex("""\bURI=["']([^"']+)["']""").replace(trimmed) { mr ->
+                        val resolved = resolveRelativeUrl(baseUrl, mr.groupValues[1])
+                        if (resolved.startsWith("https://", true) || resolved.startsWith("http://", true)) {
+                            """URI="${wrapUrl(resolved, headers)}""""
+                        } else {
+                            mr.value
+                        }
+                    }
+                    sb.append(rewritten).append("\n")
                 }
                 else -> {
                     val resolved = resolveRelativeUrl(baseUrl, trimmed)

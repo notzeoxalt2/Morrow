@@ -116,11 +116,14 @@ actual suspend fun httpRequestRaw(
     val request = buildDesktopRequest(method, url, headers, body)
 
     client.newCall(request).execute().use { response ->
+        val payload = readResponseBodyLimited(response.body, maxResponseBodyBytes)
+
         RawHttpResponse(
             status = response.code,
             statusText = response.message,
             url = response.request.url.toString(),
-            body = readResponseBodyLimited(response.body, maxResponseBodyBytes),
+            body = payload.first,
+            bodyBase64 = payload.second,
             headers = response.headers.toMultimap().mapValues { (_, values) ->
                 values.joinToString(",")
             }.mapKeys { (name, _) ->
@@ -215,8 +218,8 @@ private fun readAtMostBytes(stream: InputStream, maxBytes: Int): LimitedReadResu
     return LimitedReadResult(out.toByteArray(), truncated)
 }
 
-private fun readResponseBodyLimited(body: ResponseBody?, maxBytes: Int): String {
-    if (body == null) return ""
+private fun readResponseBodyLimited(body: ResponseBody?, maxBytes: Int): Pair<String, String?> {
+    if (body == null) return "" to null
     val charset = body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
     val readResult = body.byteStream().use { stream ->
         readAtMostBytes(stream, maxBytes.coerceAtLeast(0))
@@ -226,7 +229,11 @@ private fun readResponseBodyLimited(body: ResponseBody?, maxBytes: Int): String 
     }.getOrElse {
         String(readResult.bytes, Charsets.UTF_8)
     }
-    return if (readResult.truncated) decoded + truncationSuffix else decoded
+    val text = if (readResult.truncated) decoded + "\n...[truncated]" else decoded
+    val binary = if (body.contentType()?.subtype == "octet-stream" && !readResult.truncated) {
+        kotlin.io.encoding.Base64.encode(readResult.bytes)
+    } else null
+    return text to binary
 }
 
 private fun readResponseBody(body: ResponseBody?): String {

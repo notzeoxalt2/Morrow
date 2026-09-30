@@ -100,6 +100,15 @@ internal object JsBindings {
                     }
                 },
                 text: function() { return Promise.resolve(parsed.body); },
+                arrayBuffer: function() {
+                    if (parsed.bodyBase64) {
+                        var raw = atob(parsed.bodyBase64);
+                        var bytes = new Uint8Array(raw.length);
+                        for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+                        return Promise.resolve(bytes.buffer);
+                    }
+                    return Promise.resolve(new TextEncoder().encode(parsed.body || '').buffer);
+                },
                 json: function() {
                     try {
                         if (parsed.body === null || parsed.body === undefined || parsed.body === '') {

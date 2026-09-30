@@ -75,6 +75,7 @@ internal class FetchBridge : HostModule {
                 "url" to JsonPrimitive(response.url),
                 "statusText" to JsonPrimitive(response.statusText),
                 "body" to JsonPrimitive(response.body),
+                "bodyBase64" to JsonPrimitive(response.bodyBase64.orEmpty()),
                 "headers" to JsonObject(responseHeaders.mapValues { JsonPrimitive(it.value) }),
             ),
         )

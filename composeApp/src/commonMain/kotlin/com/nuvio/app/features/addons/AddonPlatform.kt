@@ -13,6 +13,7 @@ data class RawHttpResponse(
     val url: String,
     val body: String,
     val headers: Map<String, String>,
+    val bodyBase64: String? = null,
 )
 
 /** Default safety limit for generic and plugin-provided HTTP responses. */

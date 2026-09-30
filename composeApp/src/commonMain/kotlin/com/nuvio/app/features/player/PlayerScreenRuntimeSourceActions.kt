@@ -271,9 +271,10 @@ internal fun PlayerScreenRuntime.switchToSource(stream: StreamItem) {
         saveDirectStreamForReuse(stream, url, currentVideoId, activeSeasonNumber, activeEpisodeNumber)
     }
     externalSubtitles = stream.externalSubtitles
-    activeSourceUrl = url
+    val requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
+    activeSourceUrl = LocalStreamProxy.wrapUrl(url, requestHeaders)
     activeSourceAudioUrl = null
-    activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
+    activeSourceHeaders = requestHeaders
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
     activeStreamType = stream.streamType
     activeSourceIdentityKey = sourceIdentityKey
@@ -322,9 +323,10 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(stream: StreamItem, episo
         saveDirectStreamForReuse(stream, url, epVideoId, episode.season, episode.episode)
     }
     externalSubtitles = stream.externalSubtitles
-    activeSourceUrl = url
+    val requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
+    activeSourceUrl = LocalStreamProxy.wrapUrl(url, requestHeaders)
     activeSourceAudioUrl = null
-    activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
+    activeSourceHeaders = requestHeaders
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
     activeStreamType = stream.streamType
     applyEpisodeStreamMetadata(stream, episode, resume)
