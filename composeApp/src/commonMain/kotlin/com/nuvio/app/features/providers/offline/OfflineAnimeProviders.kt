@@ -112,6 +112,7 @@ object OfflineAnimeProviders {
         season: Int? = null,
         episode: Int? = null,
         onGroupLoaded: (AddonStreamGroup) -> Unit,
+        excludedProviderNames: Set<String> = emptySet(),
     ): Unit = coroutineScope {
         val cleanTitle = title.trim()
         val epNum = episode ?: 1
@@ -119,14 +120,20 @@ object OfflineAnimeProviders {
         log.i { "OfflineAnimeProviders fetching streams for '$cleanTitle' S${seasonNum}E${epNum} (lookupId: $mediaLookupId)" }
 
         val anilistIdDeferred = async {
-            mediaLookupId?.let { AnimeMetadataService.extractAniListId(it) }
+            mediaLookupId?.let { AnimeMetadataService.getMappingsForLookupId(it)?.mappings?.anilist_id }
                 ?: withTimeoutOrNull(2500L) {
-                    AnimeMetadataService.searchAniList(cleanTitle).firstOrNull()?.id
+                    AnimeMetadataService.searchAniList(cleanTitle).singleOrNull { candidate ->
+                        val titleKey = cleanTitle.lowercase().filter(Char::isLetterOrDigit)
+                        listOf(candidate.title?.english, candidate.title?.romaji, candidate.title?.userPreferred).any {
+                            !it.isNullOrBlank() && it.lowercase().filter(Char::isLetterOrDigit) == titleKey
+                        }
+                    }?.id
                 }
         }
 
         // 1. AnimeDekho (Vidmoly, SRuby, Strmup, etc.)
         val j1 = launch {
+            if ("animedekho" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(10_000L) {
                     AnimeDekhoScraper.getStreams(cleanTitle, seasonNum, epNum)
@@ -147,6 +154,7 @@ object OfflineAnimeProviders {
 
         // 2. SaltAnime (RubyStm Multi-Audio, Vidmoly, etc.)
         val j2 = launch {
+            if ("saltanime" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(10_000L) {
                     SaltAnimeScraper.getStreams(cleanTitle, seasonNum, epNum)
@@ -167,6 +175,7 @@ object OfflineAnimeProviders {
 
         // 3. HiAnime (HD-1 Megacloud, HD-2 Vidstreaming)
         val j3 = launch {
+            if ("hianime" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(12_000L) {
                     HiAnimeScraper.getStreams(cleanTitle, epNum)
@@ -187,6 +196,7 @@ object OfflineAnimeProviders {
 
         // 4. Anikage (Koto, Yuki, Sora, Zen, Vidstream-2)
         val j4 = launch {
+            if ("anikage" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(10_000L) {
                     AnikageScraper.getStreams(cleanTitle, epNum)
@@ -207,6 +217,7 @@ object OfflineAnimeProviders {
 
         // 5. Miruro (Bee, Sun, Hop, Knob, Bun)
         val j5 = launch {
+            if ("miruro" in excludedProviderNames) return@launch
             val anilistId = anilistIdDeferred.await()
             val streams = runCatching {
                 withTimeoutOrNull(8_000L) {
@@ -228,6 +239,7 @@ object OfflineAnimeProviders {
 
         // 6. AnimePahe (Kwik multi-resolution & fansub)
         val j6 = launch {
+            if ("animepahe" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(8_000L) {
                     AnimePaheScraper.getStreams(cleanTitle, epNum)
@@ -248,6 +260,7 @@ object OfflineAnimeProviders {
 
         // 7. AnimeX (ANMX, ZEN, KOTO, Yuki, Sora)
         val j7 = launch {
+            if ("animex" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(9_000L) {
                     AnimeXScraper.getStreams(cleanTitle, epNum)
@@ -268,6 +281,7 @@ object OfflineAnimeProviders {
 
         // 8. AnimeTVPlus (Megaplay, HD 3, Node)
         val j8 = launch {
+            if ("animetvplus" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(9_000L) {
                     AnimeTVPlusScraper.getStreams(cleanTitle, epNum)
@@ -288,6 +302,7 @@ object OfflineAnimeProviders {
 
         // 9. Aniflix (Sasuke Hindi, Zoro English, Itachi Japanese)
         val j9 = launch {
+            if ("aniflix" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(9_000L) {
                     AniflixScraper.getStreams(cleanTitle, epNum)
@@ -308,6 +323,7 @@ object OfflineAnimeProviders {
 
         // 10. AniWaves (DatSaV, Vidplay, MyCloud)
         val j10 = launch {
+            if ("aniwaves" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(8_000L) {
                     AniWavesScraper.getStreams(cleanTitle, epNum)
@@ -328,6 +344,7 @@ object OfflineAnimeProviders {
 
         // 11. Kaa (VidStreaming 1080p Direct HLS)
         val j11 = launch {
+            if ("kaa" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(8_000L) {
                     KaaScraper.getStreams(cleanTitle, epNum)
@@ -348,6 +365,7 @@ object OfflineAnimeProviders {
 
         // 12. AnimeHeaven (Direct HLS/MP4)
         val j12 = launch {
+            if ("animeheaven" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(7_000L) {
                     AnimeHeavenScraper.getStreams(cleanTitle, epNum)
@@ -368,6 +386,7 @@ object OfflineAnimeProviders {
 
         // 13. JustAnime (Momo, Zoko, Neko, Gigi)
         val j13 = launch {
+            if ("justanime" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(7_000L) {
                     JustAnimeScraper.getStreams(cleanTitle, epNum)
@@ -388,6 +407,7 @@ object OfflineAnimeProviders {
 
         // 14. KissKH (Asian Drama & Anime Direct HLS)
         val j14 = launch {
+            if ("kisskh" in excludedProviderNames) return@launch
             val streams = runCatching {
                 withTimeoutOrNull(6_000L) {
                     KissKhScraper.getStreams(cleanTitle, epNum)

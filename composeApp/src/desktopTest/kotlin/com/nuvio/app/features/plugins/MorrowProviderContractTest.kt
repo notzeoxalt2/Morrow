@@ -14,6 +14,42 @@ import kotlin.test.assertTrue
 
 class MorrowProviderContractTest {
     @Test
+    fun liveAnimeIdsReachProviderThroughRepositoryConversion() = runBlocking {
+        assumeTrue("Live verification is opt-in", System.getenv("MORROW_LIVE_PROVIDER_TEST") == "1")
+        val file = File(System.getenv("MORROW_MIRURO_SCRIPT") ?: "missing-miruro-script")
+        assertTrue(file.isFile)
+        val scraper = PluginScraper(
+            id = "miruro-live-mapping", repositoryUrl = "https://example.test/manifest.json",
+            name = "Miruro", description = "Contract test", version = "test", filename = "miruro.js",
+            supportedTypes = listOf("anime"), enabled = true, manifestEnabled = true, code = file.readText(),
+        )
+        for ((lookup, tmdb, title, ep) in listOf(
+            listOf("anilist:21", "37854", "One Piece", "1"),
+            listOf("kitsu:12", "37854", "One Piece", "1"),
+            listOf("mal:34566", "70881", "Boruto", "3"),
+        )) {
+            assertEquals(tmdb, com.nuvio.app.features.tmdb.TmdbService.ensureTmdbId(lookup, "tv"))
+            val streams = PluginRepository.executeScraper(scraper, lookup, "anime", 1, ep.toInt()).getOrThrow()
+            assertTrue(streams.isNotEmpty(), "$lookup $title E$ep returned no sources through Morrow repository")
+            assertTrue(streams.all { it.title.contains(title, ignoreCase = true) && it.title.contains("S1 E$ep") })
+            println("Live repository conversion: $lookup -> TMDB $tmdb -> $title E$ep: ${streams.size} sources")
+            val decodeScript = System.getenv("MORROW_NATIVE_DECODE_SCRIPT")
+            val mpvLibrary = System.getenv("MORROW_NATIVE_MPV_DLL")
+            if (decodeScript != null && mpvLibrary != null && !lookup.startsWith("kitsu:")) {
+                val source = streams.first { it.name?.contains("vault") == true }
+                val proxyUrl = com.nuvio.app.features.player.LocalStreamProxy.wrapUrl(source.url, source.headers)
+                val process = ProcessBuilder("python", decodeScript, mpvLibrary, proxyUrl).start()
+                val finished = process.waitFor(45, java.util.concurrent.TimeUnit.SECONDS)
+                if (!finished) process.destroyForcibly()
+                assertTrue(finished, "$title native decoder timed out")
+                val decoded = process.inputStream.bufferedReader().readText().trim()
+                assertEquals(0, process.exitValue(), "$title bundled decoder failed: $decoded")
+                println("Bundled Morrow libmpv + native proxy: $title E$ep $decoded")
+            }
+        }
+    }
+
+    @Test
     fun liveMiruroAdapterUsesMorrowMetadataAndRuntime() = runBlocking {
         assumeTrue("Live verification is opt-in", System.getenv("MORROW_LIVE_PROVIDER_TEST") == "1")
         val file = File(System.getenv("MORROW_MIRURO_SCRIPT") ?: "missing-miruro-script")
@@ -41,7 +77,7 @@ class MorrowProviderContractTest {
     fun miruroAdapterUsesMorrowRuntimeAndRejectsWrongEpisode() = runBlocking {
         val file = File(System.getenv("MORROW_MIRURO_SCRIPT") ?: "missing-miruro-script")
         assumeTrue("Set MORROW_MIRURO_SCRIPT to the built adapter for integration verification", file.isFile)
-        val catalog = """{"data":[{"id":"wrong-title","title":{"english":"Naruto Shippuden"},"format":"TV","episode_count":500},{"id":"correct-title","title":{"english":"Naruto"},"format":"TV","episode_count":220}]}"""
+        val catalog = """{"data":[{"id":"wrong-title","title":{"english":"Naruto Shippuden"},"format":"TV","episode_count":500},{"id":"correct-title","title":{"english":"Naruto"},"format":"TV","episode_count":null}]}"""
         val playback = """{"episode_number":7,"tracks":[{"track":"sub","providers":[{"provider":"actual-provider","subtitles":[{"file":"https://example.test/7.vtt","language":"en","label":"English"}],"servers":[{"server":"actual-server","headers":{"Referer":"https://example.test/"},"streams":[{"url":"https://example.test/7.m3u8","format":"hls","quality":"720p"}]}]}]}]}"""
         val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         upstream.createContext("/") { exchange ->

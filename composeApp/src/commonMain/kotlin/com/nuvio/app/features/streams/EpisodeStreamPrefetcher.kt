@@ -10,6 +10,7 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.normalizePluginType
+import com.nuvio.app.features.plugins.contentParentId
 import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.providers.offline.OfflineAnimeProviders
 import kotlinx.coroutines.CoroutineScope
@@ -251,12 +252,14 @@ object EpisodeStreamPrefetcher {
         parentMetaId: String?,
     ) {
         val resolvedParentId = parentMetaId?.takeIf { it.isNotBlank() }
-            ?: videoId.substringBefore(':').takeIf { it.isNotBlank() }
+            ?: contentParentId(videoId).takeIf { it.isNotBlank() }
             ?: videoId
         val meta = MetaDetailsRepository.getActiveMeta(resolvedParentId)
             ?: MetaDetailsRepository.getActiveMeta(videoId)
-        val cleanTitle = meta?.name ?: videoId.substringBefore(':')
-        val mediaLookupId = meta?.imdbId ?: when {
+        val cleanTitle = meta?.name ?: resolvedParentId
+        val mediaLookupId = when {
+            resolvedParentId.startsWith("anilist:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("kitsu:") -> resolvedParentId
+            !meta?.imdbId.isNullOrBlank() -> meta?.imdbId
             videoId.startsWith("tt") -> videoId.substringBefore(":")
             resolvedParentId.startsWith("tt") -> resolvedParentId
             else -> null

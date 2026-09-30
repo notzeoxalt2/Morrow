@@ -15,6 +15,7 @@ import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.normalizePluginType
+import com.nuvio.app.features.plugins.contentParentId
 import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.plugins.PluginsUiState
 import com.nuvio.app.features.providers.offline.OfflineAnimeProviders
@@ -246,15 +247,17 @@ object StreamsRepository {
         }
 
         val resolvedParentId = parentMetaId?.takeIf { it.isNotBlank() }
-            ?: videoId.substringBefore(':').takeIf { it.isNotBlank() }
+            ?: contentParentId(videoId).takeIf { it.isNotBlank() }
             ?: videoId
         val meta = MetaDetailsRepository.getActiveMeta(resolvedParentId)
             ?: MetaDetailsRepository.getActiveMeta(videoId)
         val cleanTitle = title?.takeIf { it.isNotBlank() }
             ?: meta?.name
-            ?: videoId.substringBefore(':')
+            ?: resolvedParentId
         val metaTitle = cleanTitle
-        val mediaLookupId = meta?.imdbId ?: when {
+        val mediaLookupId = when {
+            resolvedParentId.startsWith("anilist:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("kitsu:") -> resolvedParentId
+            !meta?.imdbId.isNullOrBlank() -> meta?.imdbId
             videoId.startsWith("tt") -> videoId.substringBefore(":")
             videoId.startsWith("kitsu:") || videoId.startsWith("mal:") -> videoId
             resolvedParentId.startsWith("tt") -> resolvedParentId
@@ -294,6 +297,7 @@ object StreamsRepository {
             groupByRepository = pluginUiState.groupStreamsByRepository,
         )
 
+        val overriddenOfflineProviderNames = pluginScrapers.map { it.name.lowercase() }.toSet()
         val offlineAnimeGroups = if (isAnime) {
             listOf(
                 AddonStreamGroup(
@@ -383,7 +387,7 @@ object StreamsRepository {
             )
         } else {
             emptyList()
-        }
+        }.filterNot { it.addonName.lowercase() in overriddenOfflineProviderNames }
 
         val streamAddons = installedAddons
             .mapNotNull { addon ->
@@ -622,6 +626,7 @@ object StreamsRepository {
             if (isAnime) {
                 launch {
                     OfflineAnimeProviders.fetchAllStreams(
+                        excludedProviderNames = overriddenOfflineProviderNames,
                         title = metaTitle,
                         mediaLookupId = mediaLookupId,
                         type = type,

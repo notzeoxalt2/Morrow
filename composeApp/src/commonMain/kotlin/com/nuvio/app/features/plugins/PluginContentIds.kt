@@ -1,24 +1,15 @@
 package com.nuvio.app.features.plugins
 
-internal fun pluginContentId(
-    videoId: String,
-    season: Int?,
-    episode: Int?,
-): String {
-    val trimmed = videoId.trim()
-    if (trimmed.isBlank()) return videoId
+/** Preserve ID namespaces when removing playback episode suffixes. */
+internal fun contentParentId(videoId: String): String {
+    val value = videoId.trim().replace("tmdb/", "tmdb:")
+    val parts = value.split(':')
+    return if (parts.size >= 2 && parts[0].lowercase() in setOf("anilist", "mal", "kitsu", "tmdb", "movie", "series")) {
+        parts.take(2).joinToString(":").substringBefore('/')
+    } else value.substringBefore(':').substringBefore('/')
+}
 
-    val withoutPrefix = when {
-        trimmed.startsWith("tmdb:") -> trimmed.removePrefix("tmdb:")
-        trimmed.startsWith("tmdb/") -> trimmed.removePrefix("tmdb/")
-        else -> trimmed
-    }
-
-    val withoutEpisodeSuffix = if (season != null && episode != null) {
-        withoutPrefix.removeSuffix(":$season:$episode")
-    } else {
-        withoutPrefix
-    }
-
-    return withoutEpisodeSuffix.substringBefore('/').ifBlank { trimmed }
+internal fun pluginContentId(videoId: String, season: Int?, episode: Int?): String {
+    if (videoId.isBlank()) return videoId
+    return contentParentId(videoId).removePrefix("tmdb:")
 }

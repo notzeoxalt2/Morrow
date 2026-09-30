@@ -400,6 +400,16 @@ actual object PluginRepository {
             normalizePluginType(mediaType)
         }
 
+        val animeMapping = if (Regex("^(anilist|mal|kitsu):", RegexOption.IGNORE_CASE).containsMatchIn(tmdbId)) {
+            com.nuvio.app.features.anime.AnimeMetadataService.getMappingsForLookupId(tmdbId)
+        } else null
+        val callContext = buildMap<String, String> {
+            put("originalId", tmdbId)
+            animeMapping?.mappings?.anilist_id?.let { put("anilistId", it.toString()) }
+            if (animeMapping != null && episode != null) put("animeEpisode", episode.toString())
+            animeMapping?.titles?.get("en")?.let { put("animeTitle", it) }
+        }
+
         val resolvedTmdbId = resolvePluginTmdbId(
             tmdbId = tmdbId,
             mediaType = effectiveMediaType,
@@ -414,6 +424,7 @@ actual object PluginRepository {
                 episode = episode,
                 scraperId = scraper.id,
                 respectSearchPause = respectSearchPause,
+                callContext = callContext,
             )
         }
     }

@@ -73,6 +73,7 @@ data class AniListCoverImage(
 
 @Serializable
 data class AniZipResponse(
+    val titles: Map<String, String?> = emptyMap(),
     val mappings: AniZipMappings? = null,
     val episodes: Map<String, AniZipEpisode>? = null,
 )
@@ -91,7 +92,7 @@ data class AniZipMappings(
 data class AniZipEpisode(
     val episodeNumber: Int? = null,
     val episode: String? = null,
-    val title: Map<String, String>? = null,
+    val title: Map<String, String?>? = null,
     val image: String? = null,
     val overview: String? = null,
     val summary: String? = null,
@@ -333,9 +334,13 @@ object AnimeMetadataService {
      * Supplements missing banner images, high-res posters, episode stills, and ratings.
      */
     suspend fun enrichMeta(meta: MetaDetails, lookupId: String): MetaDetails {
-        val extractedAniListId = extractAniListId(lookupId)
-            ?: extractAniListId(meta.id)
-            ?: searchAniList(meta.name).firstOrNull()?.id
+        val extractedAniListId = getMappingsForLookupId(lookupId)?.mappings?.anilist_id
+            ?: getMappingsForLookupId(meta.id)?.mappings?.anilist_id
+            ?: searchAniList(meta.name).singleOrNull { candidate ->
+                val titles = listOf(candidate.title?.english, candidate.title?.romaji, candidate.title?.native, candidate.title?.userPreferred)
+                val normalized = meta.name.lowercase().filter(Char::isLetterOrDigit)
+                titles.any { !it.isNullOrBlank() && it.lowercase().filter(Char::isLetterOrDigit) == normalized }
+            }?.id
 
         if (extractedAniListId == null || extractedAniListId <= 0) {
             return meta
@@ -425,13 +430,32 @@ object AnimeMetadataService {
         )
     }
 
-    fun extractAniListId(value: String): Int? {
-        val clean = value.trim()
-        val regex = Regex("""(?:anilist:|mal:|kitsu:)?(\d+)""")
-        if (clean.startsWith("anilist:", ignoreCase = true)) {
-            return clean.substringAfter(':').toIntOrNull()
+    /** Only explicit AniList IDs belong to the AniList namespace. */
+    fun extractAniListId(value: String): Int? =
+        Regex("^anilist:(\\d+)(?:[:/].*)?$", RegexOption.IGNORE_CASE)
+            .matchEntire(value.trim())?.groupValues?.get(1)?.toIntOrNull()
+
+    private val lookupMappingCache = mutableMapOf<String, AniZipResponse>()
+
+    suspend fun getMappingsForLookupId(lookupId: String): AniZipResponse? {
+        val match = Regex("^(anilist|mal|kitsu):(\\d+)(?:[:/].*)?$", RegexOption.IGNORE_CASE)
+            .matchEntire(lookupId.trim()) ?: return null
+        val namespace = match.groupValues[1].lowercase()
+        val id = match.groupValues[2].toIntOrNull()?.takeIf { it > 0 } ?: return null
+        if (namespace == "anilist") return getAniZipMappings(id)
+        val key = "$namespace:$id"
+        lookupMappingCache[key]?.let { return it }
+        return try {
+            val body = withTimeoutOrNull(5000L) { httpGetText("$ANIZIP_URL?" + namespace + "_id=$id") } ?: return null
+            val mapped = json.decodeFromString<AniZipResponse>(body)
+            if (mapped.mappings?.anilist_id == null) return null
+            lookupMappingCache[key] = mapped
+            mapped
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            log.w(error) { "Anime ID mapping failed for $key" }
+            null
         }
-        val match = regex.find(clean)
-        return match?.groupValues?.get(1)?.toIntOrNull()
     }
 }

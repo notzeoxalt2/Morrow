@@ -1,6 +1,7 @@
 package com.nuvio.app.features.tmdb
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.anime.AnimeMetadataService
 import com.nuvio.app.features.addons.httpGetText
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -19,6 +20,12 @@ object TmdbService {
 
     suspend fun ensureTmdbId(videoId: String, mediaType: String, fallbackImdbId: String? = null): String? {
         val apiKey = TmdbSettingsRepository.effectiveApiKey().ifBlank { DEFAULT_TMDB_API_KEY }
+
+        if (Regex("^(anilist|mal|kitsu):", RegexOption.IGNORE_CASE).containsMatchIn(videoId.trim())) {
+            val mapping = AnimeMetadataService.getMappingsForLookupId(videoId)?.mappings ?: return null
+            mapping.themoviedb_id?.takeIf { it.isNotBlank() && it.all(Char::isDigit) }?.let { return it }
+            return mapping.imdb_id?.let { imdbToTmdb(it, mediaType, apiKey) }
+        }
 
         val normalized = videoId
             .removePrefix("tmdb:")

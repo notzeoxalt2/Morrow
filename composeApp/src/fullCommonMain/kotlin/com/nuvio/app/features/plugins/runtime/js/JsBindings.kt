@@ -35,6 +35,7 @@ internal object JsBindings {
                         return;
                     }
                     var args = JSON.parse(__get_call_args());
+                    globalThis.MORROW_MEDIA_CONTEXT = args.context || {};
                     var season = args.season == null ? undefined : args.season;
                     var episode = args.episode == null ? undefined : args.episode;
                     var result = await getStreams(args.tmdbId, args.mediaType, season, episode);

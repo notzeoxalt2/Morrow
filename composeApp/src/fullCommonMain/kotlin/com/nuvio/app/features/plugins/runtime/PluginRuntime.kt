@@ -59,6 +59,7 @@ internal object PluginRuntime {
         episode: Int?,
         scraperId: String,
         respectSearchPause: Boolean = true,
+        callContext: Map<String, String> = emptyMap(),
     ): List<PluginRuntimeResult> {
         suspend fun run(): List<PluginRuntimeResult> {
             val scraperSettingsJson = PluginStorage.loadScraperSettings(scraperId) ?: "{}"
@@ -77,6 +78,7 @@ internal object PluginRuntime {
                             episode = episode,
                             scraperId = scraperId,
                             scraperSettings = scraperSettingsMap,
+                            callContext = callContext,
                         )
                     }
                 }
@@ -131,12 +133,14 @@ internal object PluginRuntime {
         episode: Int?,
         scraperId: String,
         scraperSettings: Map<String, JsonElement>,
+        callContext: Map<String, String>,
     ): List<PluginRuntimeResult> {
         val jsRuntime = JsRuntime()
         val deferred = CompletableDeferred<String>()
         val settingsJson = JsonObject(scraperSettings).toString()
         val callArgsJson = JsonObject(
             mapOf(
+                "context" to JsonObject(callContext.mapValues { JsonPrimitive(it.value) }),
                 "tmdbId" to JsonPrimitive(tmdbId),
                 "mediaType" to JsonPrimitive(mediaType),
                 "season" to (season?.let(::JsonPrimitive) ?: JsonNull),

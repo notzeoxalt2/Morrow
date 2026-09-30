@@ -15,6 +15,7 @@ import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.PluginsUiState
 import com.nuvio.app.features.plugins.normalizePluginType
+import com.nuvio.app.features.plugins.contentParentId
 import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.providers.offline.OfflineAnimeProviders
 import com.nuvio.app.features.tmdb.TmdbService
@@ -280,7 +281,7 @@ object PlayerStreamsRepository {
         val installedAddons = AddonRepository.uiState.value.addons.enabledAddons()
         PlayerSettingsRepository.ensureLoaded()
         val playerSettings = PlayerSettingsRepository.uiState.value
-        val resolvedParentId = videoId.substringBefore(':').takeIf { it.isNotBlank() } ?: videoId
+        val resolvedParentId = contentParentId(videoId).takeIf { it.isNotBlank() } ?: videoId
         val meta = MetaDetailsRepository.getActiveMeta(resolvedParentId)
             ?: MetaDetailsRepository.getActiveMeta(videoId)
         val isAnime = type.equals("anime", ignoreCase = true) ||
@@ -340,6 +341,7 @@ object PlayerStreamsRepository {
                 )
             }
 
+        val overriddenOfflineProviderNames = pluginScrapers.map { it.name.lowercase() }.toSet()
         val offlineAnimeGroups = if (isAnime) {
             listOf(
                 AddonStreamGroup(
@@ -429,7 +431,7 @@ object PlayerStreamsRepository {
             )
         } else {
             emptyList()
-        }
+        }.filterNot { it.addonName.lowercase() in overriddenOfflineProviderNames }
 
         if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && offlineAnimeGroups.isEmpty()) {
             stateFlow.value = StreamsUiState(
@@ -610,11 +612,13 @@ object PlayerStreamsRepository {
                 }
             }
 
-            val resolvedParentId = videoId.substringBefore(':').takeIf { it.isNotBlank() } ?: videoId
+            val resolvedParentId = contentParentId(videoId).takeIf { it.isNotBlank() } ?: videoId
             val meta = MetaDetailsRepository.getActiveMeta(resolvedParentId)
                 ?: MetaDetailsRepository.getActiveMeta(videoId)
-            val cleanTitle = meta?.name ?: videoId.substringBefore(':')
-            val mediaLookupId = meta?.imdbId ?: when {
+            val cleanTitle = meta?.name ?: resolvedParentId
+            val mediaLookupId = when {
+                resolvedParentId.startsWith("anilist:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("kitsu:") -> resolvedParentId
+                !meta?.imdbId.isNullOrBlank() -> meta?.imdbId
                 videoId.startsWith("tt") -> videoId.substringBefore(":")
                 resolvedParentId.startsWith("tt") -> resolvedParentId
                 else -> null
@@ -627,6 +631,7 @@ object PlayerStreamsRepository {
             if (isAnime) {
                 launch {
                     OfflineAnimeProviders.fetchAllStreams(
+                        excludedProviderNames = overriddenOfflineProviderNames,
                         title = cleanTitle,
                         mediaLookupId = mediaLookupId,
                         type = type,
