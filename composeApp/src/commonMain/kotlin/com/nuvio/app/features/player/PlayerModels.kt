@@ -109,10 +109,10 @@ enum class VideoQuality(
     val displaySubtitle: String,
 ) {
     Auto("auto", "Auto", "Auto", "Adaptive bitrate (matches network)"),
-    Max("max", "Max", "Max (1080p+)", "Maximum bitrate and highest resolution"),
-    High("high", "720p", "High (720p)", "HD 720p resolution"),
-    Mid("mid", "480p", "480p", "Standard definition 480p"),
-    Low("low", "360p", "360p", "Data saver / low bandwidth");
+    Max("max", "Max", "Maximum available", "Highest available rendition supported by the player"),
+    High("high", "720p", "Up to 720p", "Use a 720p rendition when the source offers one"),
+    Mid("mid", "480p", "480p", "Use a 480p rendition when available"),
+    Low("low", "360p", "360p", "Use a 360p rendition when available");
 
     companion object {
         fun fromId(id: String?): VideoQuality =

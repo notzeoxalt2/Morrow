@@ -3,8 +3,10 @@ package com.nuvio.app.features.plugins.runtime.host
 import co.touchlab.kermit.Logger
 import com.dokar.quickjs.QuickJs
 import com.dokar.quickjs.binding.define
+import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.function
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import kotlinx.coroutines.delay
 
 internal class HostFunctions(
     private val scraperId: String,
@@ -15,6 +17,11 @@ internal class HostFunctions(
     private val log = Logger.withTag("PluginRuntime")
 
     override fun register(runtime: QuickJs) {
+        runtime.asyncFunction("__native_timer_delay") { args ->
+            val milliseconds = (args.getOrNull(0) as? Number)?.toLong() ?: 0L
+            delay(milliseconds.coerceIn(0L, 60_000L))
+            null
+        }
         runtime.define("console") {
             function("log") { args ->
                 log.d { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }

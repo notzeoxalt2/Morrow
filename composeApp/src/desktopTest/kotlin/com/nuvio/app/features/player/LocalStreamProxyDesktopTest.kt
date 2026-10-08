@@ -9,6 +9,94 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class LocalStreamProxyDesktopTest {
+    @Test fun extensionlessPlaylistWithImageMimeKeepsSegmentHeaders() {
+        val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        upstream.createContext("/") { exchange ->
+            val valid = exchange.requestHeaders.getFirst("Referer") == "https://required.test/"
+            val payload = if (exchange.requestURI.path == "/cdn/opaque")
+                "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nsegment.ts\n#EXT-X-ENDLIST\n".toByteArray()
+                else byteArrayOf(0x47, 0x40, 0x01, 0x10)
+            exchange.responseHeaders.add("Content-Type", "image/jpeg")
+            exchange.sendResponseHeaders(if (valid) 200 else 403, payload.size.toLong())
+            exchange.responseBody.use { it.write(payload) }
+            exchange.close()
+        }
+        upstream.start()
+        try {
+            val url = LocalStreamProxy.wrapUrl("http://127.0.0.1:${upstream.address.port}/cdn/opaque?t.m3u8", mapOf("Referer" to "https://required.test/"))
+            val connection = URI(url).toURL().openConnection()
+            val playlist = connection.getInputStream().bufferedReader().use { it.readText() }
+            assertTrue(connection.contentType.contains("mpegurl"))
+            val segment = playlist.lineSequence().first { it.startsWith("http://127.0.0.1:") }
+            assertTrue(URI(segment).toURL().readBytes().contentEquals(byteArrayOf(0x47, 0x40, 0x01, 0x10)))
+        } finally { upstream.stop(0) }
+    }
+
+    @Test fun qualityChangeRetainsSourceHeadersAndFiltersMaster() {
+        val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        upstream.createContext("/") { exchange ->
+            val valid = exchange.requestHeaders.getFirst("Referer") == "https://required.test/" &&
+                exchange.requestHeaders.getFirst("X-Morrow-Video-Quality") == null
+            val playlist = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1280x720\n720.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080\n1080.m3u8"
+            val payload = playlist.toByteArray()
+            exchange.responseHeaders.add("Content-Type", "application/vnd.apple.mpegurl")
+            exchange.sendResponseHeaders(if (valid) 200 else 403, payload.size.toLong())
+            exchange.responseBody.use { it.write(payload) }
+            exchange.close()
+        }
+        upstream.start()
+        try {
+            val wrapped = LocalStreamProxy.wrapUrl("http://127.0.0.1:${upstream.address.port}/master.m3u8", mapOf("Referer" to "https://required.test/"))
+            val maximum = URL(LocalStreamProxy.withVideoQuality(wrapped, emptyMap(), VideoQuality.Max)).readText()
+            assertTrue(maximum.contains("1080.m3u8"))
+            assertTrue(!maximum.contains("720.m3u8"))
+            val capped = URL(LocalStreamProxy.withVideoQuality(wrapped, emptyMap(), VideoQuality.High)).readText()
+            assertTrue(capped.contains("720.m3u8"))
+            assertTrue(!capped.contains("1080.m3u8"))
+        } finally { upstream.stop(0) }
+    }
+
+    @Test
+    fun encodedPlaylistsDecodeBeforeRewriteWithoutLeakingDirectiveToHost() {
+        val key = ByteArray(32) { (it + 17).toByte() }
+        val marker = java.util.Base64.getEncoder().encodeToString(key)
+        val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        upstream.createContext("/") { exchange ->
+            if (exchange.requestHeaders.getFirst("X-Morrow-Playlist-Xor") != null) {
+                exchange.sendResponseHeaders(403, -1)
+            } else {
+                val path = exchange.requestURI.path
+                val plain = if (path == "/master.m3u8") "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nvariant.m3u8\n"
+                    else "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nsegment.ts\n#EXT-X-ENDLIST\n"
+                val payload = if (path.endsWith(".m3u8")) {
+                    val bytes = plain.toByteArray()
+                    for (i in bytes.indices) bytes[i] = (bytes[i].toInt() xor key[i % key.size].toInt()).toByte()
+                    java.util.Base64.getEncoder().encode(bytes)
+                } else byteArrayOf(0x47, 1, 2, 3)
+                exchange.responseHeaders.add("Content-Type", "application/octet-stream")
+                exchange.sendResponseHeaders(200, payload.size.toLong())
+                exchange.responseBody.use { it.write(payload) }
+            }
+            exchange.close()
+        }
+        upstream.start()
+        try {
+            val url = "http://127.0.0.1:${upstream.address.port}/master.m3u8"
+            val wrapped = LocalStreamProxy.wrapUrl(url, mapOf("X-Morrow-Playlist-Xor" to marker))
+            val master = URL(wrapped).readText()
+            assertTrue(master.startsWith("#EXTM3U"))
+            val variant = master.lines().first { it.startsWith("http://") }
+            val media = URL(variant).readText()
+            assertTrue(media.startsWith("#EXTM3U"))
+            val segment = media.lines().first { it.startsWith("http://") }
+            assertTrue(URL(segment).readBytes().contentEquals(byteArrayOf(0x47, 1, 2, 3)))
+            val bad = LocalStreamProxy.wrapUrl(url, mapOf("X-Morrow-Playlist-Xor" to "invalid"))
+            val connection = URL(bad).openConnection() as java.net.HttpURLConnection
+            assertEquals(502, connection.responseCode)
+            connection.disconnect()
+        } finally { upstream.stop(0) }
+    }
+
     @Test
     fun redirectedMasterKeepsAudioSubtitlesKeysAndRangesBehindProxy() {
         val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)

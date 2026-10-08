@@ -2,6 +2,10 @@ package com.nuvio.app.features.addons
 
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.core.network.DesktopIPv4FirstDns
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -17,6 +21,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
 import org.jetbrains.compose.resources.getString
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
@@ -115,22 +120,7 @@ actual suspend fun httpRequestRaw(
     }
     val request = buildDesktopRequest(method, url, headers, body)
 
-    client.newCall(request).execute().use { response ->
-        val payload = readResponseBodyLimited(response.body, maxResponseBodyBytes)
-
-        RawHttpResponse(
-            status = response.code,
-            statusText = response.message,
-            url = response.request.url.toString(),
-            body = payload.first,
-            bodyBase64 = payload.second,
-            headers = response.headers.toMultimap().mapValues { (_, values) ->
-                values.joinToString(",")
-            }.mapKeys { (name, _) ->
-                name.lowercase()
-            },
-        )
-    }
+    client.newCall(request).awaitRawHttpResponse(maxResponseBodyBytes)
 }
 
 private suspend fun executeTextRequest(
@@ -246,3 +236,28 @@ private fun readResponseBody(body: ResponseBody?): String {
         String(bytes, Charsets.UTF_8)
     }
 }
+
+// Cancel the actual socket while headers or the response body are still pending.
+private suspend fun Call.awaitRawHttpResponse(maxResponseBodyBytes: Int): RawHttpResponse =
+    suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(object : Callback {
+            override fun onFailure(call: Call, error: IOException) {
+                continuation.resumeWith(Result.failure(error))
+            }
+            override fun onResponse(call: Call, response: Response) {
+                val result = runCatching { response.use {
+                    val payload = readResponseBodyLimited(response.body, maxResponseBodyBytes)
+                    RawHttpResponse(
+                        status = response.code, statusText = response.message,
+                        url = response.request.url.toString(),
+                        body = payload.first,
+                        bodyBase64 = payload.second,
+                        headers = response.headers.toMultimap().mapValues { (_, values) -> values.joinToString(",") }
+                            .mapKeys { (name, _) -> name.lowercase() },
+                    )
+                } }
+                continuation.resumeWith(result)
+            }
+        })
+    }

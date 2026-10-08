@@ -833,6 +833,7 @@ internal fun ProviderFilterRow(
         addonGroups.forEach { group ->
             FilterChip(
                 label = providerDisplayName(group.addonName),
+                logoUrl = group.streams.firstNotNullOfOrNull { it.addonLogo },
                 isSelected = selectedFilter == group.addonId,
                 onClick = { onFilterSelected(group.addonId) },
             )
@@ -843,6 +844,7 @@ internal fun ProviderFilterRow(
 @Composable
 private fun FilterChip(
     label: String? = null,
+    logoUrl: String? = null,
     icon: ImageVector? = null,
     contentDescription: String? = null,
     isSelected: Boolean,
@@ -903,7 +905,7 @@ private fun FilterChip(
                 )
             }
             if (label != null) {
-                ProviderLogo(label)
+                ProviderLogo(label, logoUrl = logoUrl)
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelMedium.copy(
@@ -934,6 +936,8 @@ private const val STREAM_CONTENT_TYPE_BOTTOM_SPACER = "streams_bottom_spacer"
 private data class StreamSectionRenderModel(
     val sectionKey: String,
     val group: AddonStreamGroup,
+    val audioGroup: StreamAudioGroup,
+    val showAudioHeader: Boolean,
     val sources: List<StreamSourceRenderModel>,
     val showSourceHeaders: Boolean,
 )
@@ -1057,17 +1061,19 @@ internal fun StreamList(
 }
 
 private fun buildStreamSectionRenderModels(groups: List<AddonStreamGroup>): List<StreamSectionRenderModel> =
-    groups.sortedBy { providerDisplayName(it.addonName).lowercase() }
-        .withDuplicateSafeLazyKeys { group -> streamSectionRenderKey(group) }
-        .map { keyedGroup ->
+    groups.audioSections().flatMap { audioSection ->
+        audioSection.groups.withDuplicateSafeLazyKeys { group -> streamSectionRenderKey(group) }
+        .mapIndexed { index, keyedGroup ->
             val group = keyedGroup.value
-            val sectionKey = keyedGroup.lazyKey.toString()
+            val sectionKey = "${audioSection.audioGroup.name}:${keyedGroup.lazyKey}"
             val streamsBySource = group.streams.groupBy(::streamSourceName)
             val sortedSources = streamsBySource.keys.sortedBy { it.lowercase() }
 
             StreamSectionRenderModel(
                 sectionKey = sectionKey,
                 group = group,
+                audioGroup = audioSection.audioGroup,
+                showAudioHeader = index == 0 && audioSection.groups.any { it.streams.isNotEmpty() },
                 sources = sortedSources.map { sourceName ->
                     StreamSourceRenderModel(
                         sourceKey = streamSourceRenderKey(sectionKey = sectionKey, sourceName = sourceName),
@@ -1092,6 +1098,7 @@ private fun buildStreamSectionRenderModels(groups: List<AddonStreamGroup>): List
                 showSourceHeaders = sortedSources.size > 1,
             )
         }
+    }
 
 private fun LazyListScope.streamSection(
     section: StreamSectionRenderModel,
@@ -1111,6 +1118,12 @@ private fun LazyListScope.streamSection(
 ) {
     val group = section.group
     if (group.streams.isEmpty() && !group.isLoading) return
+
+    if (section.showAudioHeader) {
+        item(key = "stream_audio_${section.audioGroup.name}", contentType = STREAM_CONTENT_TYPE_SECTION_HEADER) {
+            StreamSourceHeader(sourceName = section.audioGroup.label)
+        }
+    }
 
     if (showHeader) {
         item(

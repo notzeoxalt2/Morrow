@@ -72,6 +72,16 @@ actual object LocalStreamProxy {
         return "http://127.0.0.1:$port/stream?url=$encodedUrl&h=$encodedHeaders"
     }
 
+    internal fun withVideoQuality(targetUrl: String, headers: Map<String, String>, quality: VideoQuality): String {
+        if (!targetUrl.startsWith("http", ignoreCase = true)) return targetUrl
+        val isWrapped = targetUrl.startsWith("http://127.0.0.1:$boundPort/stream?") || targetUrl.startsWith("http://localhost:$boundPort/stream?")
+        val inheritedHeaders = if (isWrapped) decodeHeaders(targetUrl.substringAfter("&h=", "").substringBefore('&')) else emptyMap()
+        val original = if (isWrapped) {
+            runCatching { URLDecoder.decode(targetUrl.substringAfter("url=").substringBefore("&h="), "UTF-8") }.getOrDefault(targetUrl)
+        } else targetUrl
+        return wrapUrl(original, inheritedHeaders + headers + ("X-Morrow-Video-Quality" to quality.id))
+    }
+
     private fun encodeHeaders(headers: Map<String, String>): String {
         val raw = headers.entries.joinToString(";;") { "${it.key}::${it.value}" }
         val bytes = raw.toByteArray(StandardCharsets.UTF_8)
@@ -222,11 +232,12 @@ actual object LocalStreamProxy {
         }
 
         headers.forEach { (name, value) ->
-            reqBuilder.header(name, value)
+            if (!name.equals(PLAYLIST_XOR_HEADER, ignoreCase = true) && !name.equals("X-Morrow-Video-Quality", ignoreCase = true)) reqBuilder.header(name, value)
         }
         val targetPath = runCatching { URI(targetUrl).path.orEmpty() }.getOrDefault("")
         val isManifestRoute = targetPath.endsWith(".m3u8", ignoreCase = true) ||
-            targetPath.startsWith("/m3u8/", ignoreCase = true)
+            targetPath.startsWith("/m3u8/", ignoreCase = true) ||
+            runCatching { URI(targetUrl).rawQuery.orEmpty().split("&").any { it.equals("t.m3u8", ignoreCase = true) } }.getOrDefault(false)
         // Playlist resolvers reject byte ranges; media segments still need Range for seeking.
         if (!rangeHeader.isNullOrBlank() && !isManifestRoute) {
             reqBuilder.header("Range", rangeHeader)
@@ -238,13 +249,17 @@ actual object LocalStreamProxy {
         val contentType = upstreamResp.header("Content-Type", "").orEmpty()
 
         val isM3u8 = contentType.contains("mpegurl", ignoreCase = true) ||
-            targetUrl.substringBefore("?").endsWith(".m3u8", ignoreCase = true)
+            isManifestRoute ||
+            (code in 200..299 && !method.equals("HEAD", ignoreCase = true) &&
+                upstreamResp.peekBody(64).string().removePrefix("\uFEFF").trimStart().startsWith("#EXTM3U"))
 
         val out = socket.getOutputStream()
 
         if (isM3u8 && code in 200..299 && !method.equals("HEAD", ignoreCase = true)) {
-            val bodyText = upstreamResp.body?.string().orEmpty()
-            val rewritten = rewriteM3u8(bodyText, upstreamResp.request.url.toString(), headers)
+            val bodyText = decodePlaylist(upstreamResp.body?.string().orEmpty(), headers)
+            val quality = headers.entries.firstOrNull { it.key.equals("X-Morrow-Video-Quality", ignoreCase = true) }?.value
+            val selected = quality?.let { selectHlsQuality(bodyText, VideoQuality.fromId(it)) } ?: bodyText
+            val rewritten = rewriteM3u8(selected, upstreamResp.request.url.toString(), headers)
             val bodyBytes = rewritten.toByteArray(StandardCharsets.UTF_8)
 
             val head = "HTTP/1.1 200 OK\r\n" +
@@ -283,6 +298,26 @@ actual object LocalStreamProxy {
             }
         }
         }
+    }
+
+    // Internal provider directive for the public player's encoded playlist format.
+    // This is consumed locally and never sent to a media host or applied to segments.
+    private const val PLAYLIST_XOR_HEADER = "X-Morrow-Playlist-Xor"
+
+    private fun decodePlaylist(content: String, headers: Map<String, String>): String {
+        val marker = headers.entries.firstOrNull { it.key.equals(PLAYLIST_XOR_HEADER, ignoreCase = true) }?.value
+            ?: return content
+        val key = try { java.util.Base64.getDecoder().decode(marker) }
+            catch (_: IllegalArgumentException) { throw java.io.IOException("Invalid playlist configuration") }
+        if (key.size != 32) throw java.io.IOException("Invalid playlist configuration")
+        if (content.trimStart().startsWith("#EXTM3U")) return content
+        val bytes = try { java.util.Base64.getDecoder().decode(content.filterNot { it.isWhitespace() }) }
+            catch (_: IllegalArgumentException) { throw java.io.IOException("Invalid encoded playlist") }
+        if (bytes.size > 2 * 1024 * 1024) throw java.io.IOException("Encoded playlist exceeds limit")
+        for (i in bytes.indices) bytes[i] = (bytes[i].toInt() xor key[i % key.size].toInt()).toByte()
+        val decoded = bytes.toString(StandardCharsets.UTF_8)
+        if (!decoded.trimStart().startsWith("#EXTM3U")) throw java.io.IOException("Invalid decoded playlist")
+        return decoded
     }
 
     private fun rewriteM3u8(

@@ -5,6 +5,7 @@ import com.dokar.quickjs.QuickJs
 import com.dokar.quickjs.binding.asyncFunction
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.plugins.runtime.host.HostModule
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -27,7 +28,10 @@ internal class FetchBridge : HostModule {
             val body = args.getOrNull(3)?.toString() ?: ""
             val followRedirects = args.getOrNull(4) as? Boolean ?: true
             try {
-                performNativeFetch(url, method, headersJson, body, followRedirects)
+                withTimeoutOrNull(5_000L) { performNativeFetch(url, method, headersJson, body, followRedirects) }
+                    ?: JsonObject(mapOf("ok" to JsonPrimitive(false), "status" to JsonPrimitive(0),
+                        "statusText" to JsonPrimitive("Request timed out"), "url" to JsonPrimitive(url),
+                        "body" to JsonPrimitive(""), "headers" to JsonObject(emptyMap()))).toString()
             } catch (ce: CancellationException) {
                 throw ce
             } catch (t: Throwable) {
@@ -64,6 +68,9 @@ internal class FetchBridge : HostModule {
             headers = headers,
             body = body,
             followRedirects = followRedirects,
+            // Long-running anime catalogs exceed the general addon response cap.
+            // Keep plugin fetches bounded while allowing complete episode JSON.
+            maxResponseBodyBytes = 8 * 1024 * 1024,
         )
 
         val responseHeaders = response.headers.mapKeys { (key, _) -> key.lowercase() }

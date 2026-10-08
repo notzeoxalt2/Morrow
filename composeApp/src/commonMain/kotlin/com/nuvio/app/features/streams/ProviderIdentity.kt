@@ -40,8 +40,8 @@ private val providerLogos = mapOf(
 )
 
 @Composable
-internal fun ProviderLogo(name: String, modifier: Modifier = Modifier) {
-    val url = providerLogoUrl(name) ?: return
+internal fun ProviderLogo(name: String, modifier: Modifier = Modifier, logoUrl: String? = null) {
+    val url = logoUrl?.takeIf { it.isNotBlank() } ?: providerLogoUrl(name) ?: return
     AsyncImage(model = url, contentDescription = null,
         modifier = modifier.size(20.dp), contentScale = ContentScale.Fit)
 }

@@ -14,6 +14,8 @@ import com.nuvio.app.features.player.AudioTrack
 import com.nuvio.app.features.player.ParentalWarning
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
+import com.nuvio.app.features.player.LocalStreamProxy
+import com.nuvio.app.features.player.VideoQuality
 import com.nuvio.app.features.player.PlayerEngineController
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.player.PlayerResizeMode
@@ -88,6 +90,7 @@ internal class NativePlayerController(
 
     @Volatile
     private var pendingSource: PendingSource? = null
+    @Volatile private var selectedVideoQuality: VideoQuality = VideoQuality.Max
     @Volatile private var activeHandleSource: PendingSource? = null
     @Volatile
     private var releaseRequested: Boolean = false
@@ -284,7 +287,7 @@ internal class NativePlayerController(
                 runCatching { java.net.URLDecoder.decode(stripped, "UTF-8") }.getOrDefault(stripped)
             }
         } else {
-            pending.sourceUrl
+            LocalStreamProxy.withVideoQuality(pending.sourceUrl, pending.headerLines.toHeaderMap(), selectedVideoQuality)
         }
 
         // Native create blocks until the player's own UI thread finishes initialising, and that
@@ -940,6 +943,17 @@ internal class NativePlayerController(
             nvidiaRtxSuperResolutionEnabled = pending.nvidiaRtxSuperResolutionEnabled,
             onError = pending.onError,
         )
+    }
+
+    override fun setVideoQuality(quality: VideoQuality) {
+        if (selectedVideoQuality == quality) return
+        selectedVideoQuality = quality
+        val pending = pendingSource ?: return
+        val current = handle.takeIf { it != 0L }
+        val position = current?.let { NativePlayerBridge.positionMs(it) } ?: pending.initialPositionMs
+        val paused = current?.let { NativePlayerBridge.isPaused(it) } ?: !pending.playWhenReady
+        attach(pending.sourceUrl, pending.headerLines.toHeaderMap(), !paused, position.coerceAtLeast(0L),
+            pending.decoderPriority, pending.nvidiaRtxSuperResolutionEnabled, pending.onError)
     }
 
     override fun setPlaybackSpeed(speed: Float) {

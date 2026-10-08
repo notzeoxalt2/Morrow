@@ -158,18 +158,20 @@ internal object JsBindings {
     """.trimIndent()
 
     private fun timerPolyfill() = """
-        if (typeof setTimeout === 'undefined') {
-            globalThis.setTimeout = function(fn, delay) {
-                var timerId = Math.floor(Math.random() * 1000000);
-                Promise.resolve().then(function() {
-                    try { fn(); } catch(e) {}
-                });
-                return timerId;
-            };
-        }
-        if (typeof clearTimeout === 'undefined') {
-            globalThis.clearTimeout = function(id) {};
-        }
+        var __morrowTimers = Object.create(null);
+        var __morrowNextTimer = 0;
+        globalThis.setTimeout = function(fn, delay) {
+            var id = ++__morrowNextTimer;
+            var args = Array.prototype.slice.call(arguments, 2);
+            __morrowTimers[id] = true;
+            __native_timer_delay(Math.max(0, Number(delay) || 0)).then(function() {
+                if (!__morrowTimers[id]) return;
+                delete __morrowTimers[id];
+                if (typeof fn === 'function') fn.apply(undefined, args);
+            }).catch(function() { delete __morrowTimers[id]; });
+            return id;
+        };
+        globalThis.clearTimeout = function(id) { delete __morrowTimers[id]; };
     """.trimIndent()
 
     private fun base64Polyfill() = """

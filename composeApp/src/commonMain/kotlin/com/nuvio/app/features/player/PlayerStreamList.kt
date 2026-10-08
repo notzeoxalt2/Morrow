@@ -22,6 +22,7 @@ import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.streams.LocalStreamSizeLabelFormat
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.sortedForGroupedDisplay
+import com.nuvio.app.features.streams.audioGroup
 import com.nuvio.app.features.streams.StreamCard
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamsUiState
@@ -56,7 +57,7 @@ internal fun PlayerStreamList(
     }.collectAsStateWithLifecycle()
     val streams = streamsUiState.filteredGroups
         .sortedBy { com.nuvio.app.features.streams.providerDisplayName(it.addonName).lowercase() }
-        .flatMap { it.streams.sortedForGroupedDisplay() }
+        .flatMap { it.streams }.sortedForGroupedDisplay()
     val visibleGroups = streamsUiState.filteredGroups
 
     when {
@@ -92,7 +93,12 @@ internal fun PlayerStreamList(
                 itemsIndexed(
                     items = streams,
                     key = { index, _ -> streamKeys[index] },
-                ) { _, stream ->
+                ) { index, stream ->
+                    if (index == 0 || streams[index - 1].audioGroup() != stream.audioGroup()) {
+                        Text(text = stream.audioGroup().label, style = MaterialTheme.typography.titleSmall,
+                            color = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.padding(vertical = 10.dp))
+                    }
                     StreamCard(
                         stream = stream,
                         enabled = stream.isSelectableForPlayback(debridSettings.canResolvePlayableLinks),

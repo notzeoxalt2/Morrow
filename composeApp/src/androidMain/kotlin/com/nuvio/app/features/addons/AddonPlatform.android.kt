@@ -5,6 +5,10 @@ import android.content.SharedPreferences
 import com.nuvio.app.core.diagnostics.SentryNetworkBreadcrumbInterceptor
 import com.nuvio.app.core.network.IPv4FirstDns
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
@@ -297,30 +301,28 @@ actual suspend fun httpRequestRaw(
                 .build()
         }
 
-        val call = client.newCall(request)
-        val cancelHandle = coroutineContext[Job]?.invokeOnCompletion { cause ->
-            if (cause is CancellationException) {
-                call.cancel()
+        client.newCall(request).awaitRawHttpResponse(maxResponseBodyBytes)
+    }
+
+// Cancel the actual socket while headers or the response body are still pending.
+private suspend fun Call.awaitRawHttpResponse(maxResponseBodyBytes: Int): RawHttpResponse =
+    suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(object : Callback {
+            override fun onFailure(call: Call, error: IOException) {
+                continuation.resumeWith(Result.failure(error))
             }
-        }
-        try {
-            call.execute().use { response ->
-                RawHttpResponse(
-                    status = response.code,
-                    statusText = response.message,
-                    url = response.request.url.toString(),
-                    body = readResponseBodyLimited(response.body, maxResponseBodyBytes),
-                    headers = response.headers.toMultimap().mapValues { (_, values) ->
-                        values.joinToString(",")
-                    }.mapKeys { (name, _) ->
-                        name.lowercase()
-                    },
-                )
+            override fun onResponse(call: Call, response: Response) {
+                val result = runCatching { response.use {
+                    RawHttpResponse(
+                        status = response.code, statusText = response.message,
+                        url = response.request.url.toString(),
+                        body = readResponseBodyLimited(response.body, maxResponseBodyBytes),
+                        headers = response.headers.toMultimap().mapValues { (_, values) -> values.joinToString(",") }
+                            .mapKeys { (name, _) -> name.lowercase() },
+                    )
+                } }
+                continuation.resumeWith(result)
             }
-        } catch (error: IOException) {
-            if (call.isCanceled()) throw CancellationException("Cancelled HTTP request", error)
-            throw error
-        } finally {
-            cancelHandle?.dispose()
-        }
+        })
     }
