@@ -159,3 +159,13 @@ private fun String.fallbackRepositoryLabel(): String {
         }
     }
 }
+
+/** Manifest capabilities, rather than provider names, determine source filters. */
+internal fun sourceCategories(types: List<String>): Set<String> = types.mapNotNull {
+    when (it.lowercase()) {
+        "anime" -> "anime"
+        "movie", "movies" -> "movies"
+        "tv", "series", "show", "shows" -> "series"
+        else -> null
+    }
+}.toSet()

@@ -33,6 +33,7 @@ internal fun List<AddonStreamGroup>.providerSections(): List<AddonStreamGroup> =
             }.sortedForGroupedDisplay(),
             isLoading = groups.any { it.isLoading },
             error = groups.firstNotNullOfOrNull { it.error },
+            sourceCategories = groups.flatMap { it.sourceCategories }.toSet(),
         )
     }.sortedBy { it.addonName.lowercase() }
 

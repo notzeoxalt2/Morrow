@@ -320,6 +320,7 @@ object StreamsRepository {
             AddonStreamGroup(
                 addonName = addon.addonName,
                 addonId = addon.addonId,
+                sourceCategories = sourceCategories(addon.manifest.types),
                 streams = emptyList(),
                 isLoading = true,
             )
@@ -327,6 +328,7 @@ object StreamsRepository {
             AddonStreamGroup(
                 addonName = providerGroup.addonName,
                 addonId = providerGroup.addonId,
+                sourceCategories = sourceCategories(providerGroup.scrapers.flatMap { it.supportedTypes }),
                 streams = emptyList(),
                 isLoading = true,
             )
@@ -560,6 +562,7 @@ object StreamsRepository {
                         AddonStreamGroup(
                             addonName = displayName,
                             addonId = addon.addonId,
+                            sourceCategories = sourceCategories(addon.manifest.types),
                             streams = parsed,
                             isLoading = false,
                         )
@@ -569,7 +572,8 @@ object StreamsRepository {
                         AddonStreamGroup(
                             addonName = displayName,
                             addonId = addon.addonId,
-                            streams = emptyList(),
+                sourceCategories = sourceCategories(addon.manifest.types),
+                streams = emptyList(),
                             isLoading = false,
                             error = t.message,
                         )

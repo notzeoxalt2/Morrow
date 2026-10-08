@@ -1048,6 +1048,8 @@ tasks.matching {
 }.configureEach {
     if (isWindowsHost) {
         dependsOn(prepareWindowsPackageResources)
+        inputs.dir(project.file("src/desktopMain/resources/windows"))
+        inputs.file(rootProject.file("scripts/windows/apply-msi-branding.ps1"))
     }
 }
 
@@ -1462,6 +1464,18 @@ fun publishWindowsMsiOutput(release: Boolean) {
     val sourceMsi = defaultMsi.takeIf { it.exists() }
         ?: finalMsi.takeIf { it.exists() }
         ?: error("Expected Windows MSI output in ${outputDir.absolutePath}")
+
+    // Compose clears jpackage's custom resource directory during packaging.
+    // Replace the two WiX artwork streams before any artifact is copied or signed.
+    val branding = ProcessBuilder(
+        "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+        rootProject.file("scripts/windows/apply-msi-branding.ps1").absolutePath,
+        "-MsiPath", sourceMsi.absolutePath,
+        "-ResourceDirectory", project.file("src/desktopMain/resources/windows").absolutePath,
+    ).redirectErrorStream(true).start()
+    val brandingOutput = branding.inputStream.bufferedReader().readText()
+    check(branding.waitFor() == 0) { "Could not apply Morrow installer artwork: $brandingOutput" }
+    logger.lifecycle(brandingOutput.trim())
 
     if (sourceMsi.canonicalFile != finalMsi.canonicalFile) {
         sourceMsi.copyTo(finalMsi, overwrite = true)

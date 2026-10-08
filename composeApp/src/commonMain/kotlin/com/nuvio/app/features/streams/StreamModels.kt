@@ -277,6 +277,7 @@ data class AddonStreamGroup(
     val streams: List<StreamItem>,
     val isLoading: Boolean = false,
     val error: String? = null,
+    val sourceCategories: Set<String> = emptySet(),
 )
 
 enum class StreamsEmptyStateReason {
@@ -302,6 +303,8 @@ data class StreamsUiState(
 ) {
     val filteredGroups: List<AddonStreamGroup>
         get() = if (selectedFilter == null) groups
+                else if (selectedFilter.startsWith("category:"))
+                    groups.filter { selectedFilter.removePrefix("category:") in it.sourceCategories }
                 else if (selectedFilter.startsWith("provider-name:"))
                     groups.filter { "provider-name:" + providerDisplayName(it.addonName).lowercase() == selectedFilter }
                 else groups.filter { it.addonId == selectedFilter }

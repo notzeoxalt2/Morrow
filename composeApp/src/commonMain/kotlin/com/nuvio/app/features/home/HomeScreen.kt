@@ -831,8 +831,11 @@ fun HomeScreen(
     val isResolvingHeroSources = addonManifestsLoading || homeUiState.isLoading
     var firstCatalogReported by remember { mutableStateOf(false) }
 
-    LaunchedEffect(homeUiState.sections.firstOrNull()?.key, onFirstCatalogRendered) {
-        if (firstCatalogReported || homeUiState.sections.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(onFirstCatalogRendered) {
+        if (firstCatalogReported) return@LaunchedEffect
+        // The home skeleton is ready before remote catalogs. Reveal it after the
+        // first frame instead of holding the profile transition for network data.
+        androidx.compose.runtime.withFrameNanos { }
         firstCatalogReported = true
         onFirstCatalogRendered?.invoke()
     }
