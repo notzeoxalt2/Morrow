@@ -18,7 +18,6 @@ import com.nuvio.app.features.plugins.normalizePluginType
 import com.nuvio.app.features.plugins.contentParentId
 import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.plugins.PluginsUiState
-import com.nuvio.app.features.providers.offline.OfflineAnimeProviders
 import com.nuvio.app.features.tmdb.TmdbService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -123,7 +122,8 @@ object StreamsRepository {
             episode = episode,
             manualSelection = manualSelection,
         )
-        val requestKey = "$requestToken::pluginsGrouped=${pluginUiState.groupStreamsByRepository}"
+        val requestKey = "$requestToken::pluginsGrouped=${pluginUiState.groupStreamsByRepository}" +
+            "::providers=${pluginUiState.scrapers.map { Triple(it.id, it.version, it.enabled) }.hashCode()}"
         val currentState = _uiState.value
         if (
             !forceRefresh &&
@@ -297,97 +297,8 @@ object StreamsRepository {
             groupByRepository = pluginUiState.groupStreamsByRepository,
         )
 
-        val overriddenOfflineProviderNames = pluginScrapers.map { it.name.lowercase() }.toSet()
-        val offlineAnimeGroups = if (isAnime) {
-            listOf(
-                AddonStreamGroup(
-                    addonName = "AnimeDekho",
-                    addonId = "offline:animedekho",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "SaltAnime",
-                    addonId = "offline:saltanime",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "HiAnime",
-                    addonId = "offline:hianime",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "Anikage",
-                    addonId = "offline:anikage",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "Miruro",
-                    addonId = "offline:miruro",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AnimePahe",
-                    addonId = "offline:animepahe",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AnimeX",
-                    addonId = "offline:animex",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AnimeTVPlus",
-                    addonId = "offline:animetvplus",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "Aniflix",
-                    addonId = "offline:aniflix",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AniWaves",
-                    addonId = "offline:aniwaves",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "Kaa",
-                    addonId = "offline:kaa",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AnimeHeaven",
-                    addonId = "offline:animeheaven",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "JustAnime",
-                    addonId = "offline:justanime",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "KissKH",
-                    addonId = "offline:kisskh",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-            )
-        } else {
-            emptyList()
-        }.filterNot { it.addonName.lowercase() in overriddenOfflineProviderNames }
+        val offlineAnimeGroups = emptyList<AddonStreamGroup>()
+
 
         val streamAddons = installedAddons
             .mapNotNull { addon ->
@@ -401,7 +312,7 @@ object StreamsRepository {
                 )
             }
 
-        log.d { "Found ${streamAddons.size} addons for stream type=$type id=$videoId (Offline anime active)" }
+        log.d { "Found ${streamAddons.size} addons for stream type=$type id=$videoId" }
 
         // Initialise loading placeholders
         val installedAddonOrder = streamAddons.map { it.addonName } + offlineAnimeGroups.map { it.addonName }
@@ -623,32 +534,7 @@ object StreamsRepository {
                 null
             }
 
-            if (isAnime) {
-                launch {
-                    OfflineAnimeProviders.fetchAllStreams(
-                        excludedProviderNames = overriddenOfflineProviderNames,
-                        title = metaTitle,
-                        mediaLookupId = mediaLookupId,
-                        type = type,
-                        year = metaYear,
-                        season = season,
-                        episode = episode,
-                        onGroupLoaded = { group ->
-                            publishAddonGroup(presentStreamGroup(group))
-                        }
-                    )
-                    _uiState.update { current ->
-                        current.copy(
-                            groups = current.groups.map { g ->
-                                if (g.addonId.startsWith("offline:") && g.isLoading) {
-                                    g.copy(isLoading = false)
-                                } else g
-                            }
-                        )
-                    }
-                    updateAutoPlayAfterStreamsChanged()
-                }
-            }
+
 
             streamAddons.forEach { addon ->
                 launch {

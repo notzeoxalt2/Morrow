@@ -9,6 +9,27 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class LocalStreamProxyDesktopTest {
+    @Test fun wrappedSegmentsHaveCorrectMimeLengthAndTransportBytes() {
+        val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val png = byteArrayOf(0x89.toByte(),0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a) +
+            ByteArray(12) + "IEND".encodeToByteArray() + ByteArray(4)
+        val ts = ByteArray(188 * 4).also { for (i in 0..3) it[i*188] = 0x47 }
+        upstream.createContext("/") { exchange ->
+            val payload = png + ts
+            exchange.responseHeaders.add("Content-Type", "image/png")
+            exchange.sendResponseHeaders(200, payload.size.toLong())
+            exchange.responseBody.use { it.write(payload) }
+            exchange.close()
+        }
+        upstream.start()
+        try {
+            val connection = URI(LocalStreamProxy.wrapUrl("http://127.0.0.1:${upstream.address.port}/segment.png", mapOf("Referer" to "https://required.test/"))).toURL().openConnection()
+            val bytes = connection.getInputStream().use { it.readBytes() }
+            assertEquals("video/mp2t", connection.contentType)
+            assertEquals(ts.size.toLong(), connection.contentLengthLong)
+            assertTrue(bytes.contentEquals(ts))
+        } finally { upstream.stop(0) }
+    }
     @Test fun extensionlessPlaylistWithImageMimeKeepsSegmentHeaders() {
         val upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         upstream.createContext("/") { exchange ->

@@ -11,6 +11,32 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class MorrowProviderRolloutTest {
+    @Test fun liveEveryReturnedSubDubSourceForReportedProviders() = runBlocking {
+        assumeTrue(System.getenv("MORROW_LIVE_ROLLOUT") == "1")
+        val names = System.getenv("MORROW_ROLLOUT_ANIME")?.split(',').orEmpty()
+        val decoder = requireNotNull(System.getenv("MORROW_NATIVE_DECODE_SCRIPT"))
+        val library = requireNotNull(System.getenv("MORROW_NATIVE_MPV_DLL"))
+        val failures = mutableListOf<String>()
+        for (name in names) {
+            val file = script("MORROW_ANIME_REPO", name)
+            val scraper = PluginScraper(id = "audio-check-$name", repositoryUrl = "https://example.test/anime.json",
+                name = name, description = "Live audio verification", version = "test", filename = "$name.js",
+                supportedTypes = listOf("anime"), enabled = true, manifestEnabled = true, code = file.readText())
+            val sources = PluginRepository.executeScraper(scraper, "mal:34566", "anime", 1, 3).getOrThrow()
+            if (sources.isEmpty()) failures += "$name Boruto E3 returned no sources"
+            for (source in sources) {
+                val url = com.nuvio.app.features.player.LocalStreamProxy.wrapUrl(source.url, source.headers)
+                val process = ProcessBuilder("python", decoder, library, url).start()
+                val finished = process.waitFor(45, java.util.concurrent.TimeUnit.SECONDS)
+                if (!finished) process.destroyForcibly()
+                val result = if (finished) process.inputStream.bufferedReader().readText().trim() else "timeout"
+                val decoded = finished && process.exitValue() == 0
+                println("AUDIO-CHECK $name Boruto E3 ${source.name}: ${if (decoded) "PASS" else "FAIL"} $result")
+                if (!decoded) failures += "$name ${source.name}: $result"
+            }
+        }
+        assertTrue(failures.isEmpty(), failures.joinToString("\n"))
+    }
     @Test fun liveFetchDiagnostics() = runBlocking {
         assumeTrue(System.getenv("MORROW_LIVE_ROLLOUT") == "1")
         val code = """
@@ -40,9 +66,10 @@ class MorrowProviderRolloutTest {
                 "/rest/api/servers" -> """{"subProviders":[{"id":"actual-server"}],"dubProviders":[]}"""
                 "/rest/api/sources" -> """{"sources":[{"url":"http://127.0.0.1:${upstream.address.port}/7.m3u8","quality":"720p"}],"headers":{"Referer":"https://actual-player.test/"}}"""
                 "/7.m3u8" -> "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\n7.ts\n#EXT-X-ENDLIST\n"
+                "/7.ts" -> "synthetic transport segment for resolver contract"
                 else -> "{}"
             }
-            exchange.responseHeaders.add("Content-Type", "application/json")
+            exchange.responseHeaders.add("Content-Type", if (exchange.requestURI.path == "/7.ts") "video/mp2t" else "application/json")
             exchange.sendResponseHeaders(200, body.toByteArray().size.toLong())
             exchange.responseBody.use { it.write(body.toByteArray()) }
             exchange.close()

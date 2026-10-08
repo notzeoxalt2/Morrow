@@ -22,7 +22,8 @@ import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.streams.LocalStreamSizeLabelFormat
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
 import com.nuvio.app.features.streams.sortedForGroupedDisplay
-import com.nuvio.app.features.streams.audioGroup
+import com.nuvio.app.features.streams.providerSections
+import com.nuvio.app.features.streams.providerDisplayName
 import com.nuvio.app.features.streams.StreamCard
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamsUiState
@@ -55,9 +56,9 @@ internal fun PlayerStreamList(
         StreamBadgeSettingsRepository.ensureLoaded()
         StreamBadgeSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
-    val streams = streamsUiState.filteredGroups
+    val streams = streamsUiState.filteredGroups.providerSections()
         .sortedBy { com.nuvio.app.features.streams.providerDisplayName(it.addonName).lowercase() }
-        .flatMap { it.streams }.sortedForGroupedDisplay()
+        .flatMap { it.streams }
     val visibleGroups = streamsUiState.filteredGroups
 
     when {
@@ -94,8 +95,8 @@ internal fun PlayerStreamList(
                     items = streams,
                     key = { index, _ -> streamKeys[index] },
                 ) { index, stream ->
-                    if (index == 0 || streams[index - 1].audioGroup() != stream.audioGroup()) {
-                        Text(text = stream.audioGroup().label, style = MaterialTheme.typography.titleSmall,
+                    if (index == 0 || providerDisplayName(streams[index - 1].addonName) != providerDisplayName(stream.addonName)) {
+                        Text(text = providerDisplayName(stream.addonName), style = MaterialTheme.typography.titleSmall,
                             color = Color.White.copy(alpha = 0.85f),
                             modifier = Modifier.padding(vertical = 10.dp))
                     }

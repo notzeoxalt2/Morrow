@@ -253,6 +253,10 @@ actual object LocalStreamProxy {
             (code in 200..299 && !method.equals("HEAD", ignoreCase = true) &&
                 upstreamResp.peekBody(64).string().removePrefix("\uFEFF").trimStart().startsWith("#EXTM3U"))
 
+        val segmentOffset = if (!isM3u8 && code in 200..299 && !method.equals("HEAD", ignoreCase = true) &&
+            contentType.startsWith("image/", ignoreCase = true)) {
+            pngWrappedTransportStreamOffset(upstreamResp.peekBody(64L * 1024).bytes())
+        } else null
         val out = socket.getOutputStream()
 
         if (isM3u8 && code in 200..299 && !method.equals("HEAD", ignoreCase = true)) {
@@ -272,12 +276,21 @@ actual object LocalStreamProxy {
             out.write(bodyBytes)
             out.flush()
         } else {
-            val statusLine = "HTTP/1.1 $code $message\r\n"
+            val statusLine = if (segmentOffset != null) "HTTP/1.1 200 OK\r\n" else "HTTP/1.1 $code $message\r\n"
             val sb = StringBuilder(statusLine)
             upstreamResp.headers.forEach { (name, value) ->
+                if (segmentOffset != null && (name.equals("Content-Type", true) ||
+                    name.equals("Content-Length", true) || name.equals("Content-Range", true) ||
+                    name.equals("Content-Encoding", true))) return@forEach
                 if (!name.equals("Transfer-Encoding", ignoreCase = true) &&
                     !name.equals("Connection", ignoreCase = true)) {
                     sb.append("$name: $value\r\n")
+                }
+            }
+            if (segmentOffset != null) {
+                sb.append("Content-Type: video/mp2t\r\n")
+                upstreamResp.body?.contentLength()?.takeIf { it >= segmentOffset }?.let {
+                    sb.append("Content-Length: ${it - segmentOffset}\r\n")
                 }
             }
             sb.append("Access-Control-Allow-Origin: *\r\n")
@@ -288,6 +301,15 @@ actual object LocalStreamProxy {
 
             if (!method.equals("HEAD", ignoreCase = true)) {
                 upstreamResp.body?.byteStream()?.use { input ->
+                    if (segmentOffset != null) {
+                        var remaining = segmentOffset.toLong()
+                        while (remaining > 0) {
+                            val skipped = input.skip(remaining)
+                            if (skipped > 0) remaining -= skipped
+                            else if (input.read() >= 0) remaining--
+                            else throw java.io.IOException("Truncated wrapped HLS segment")
+                        }
+                    }
                     val buffer = ByteArray(64 * 1024)
                     var bytesRead: Int
                     while (input.read(buffer).also { bytesRead = it } != -1) {

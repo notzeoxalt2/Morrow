@@ -107,6 +107,7 @@ import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.debrid.toastMessage
 import com.nuvio.app.features.details.MetaScreenBackgroundMode
+import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
@@ -211,7 +212,9 @@ fun StreamsScreen(
     val effectiveResumePositionMs = resumeState.positionMs
     val effectiveResumeProgressFraction = resumeState.progressFraction
 
-    LaunchedEffect(type, videoId, seasonNumber, episodeNumber, manualSelection) {
+    val providerState by PluginRepository.uiState.collectAsStateWithLifecycle()
+    val providerRevision = providerState.scrapers.map { Triple(it.id, it.version, it.enabled) }
+    LaunchedEffect(type, videoId, seasonNumber, episodeNumber, manualSelection, providerRevision) {
         StreamsRepository.load(
             type = type,
             videoId = videoId,
@@ -806,7 +809,7 @@ internal fun ProviderFilterRow(
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val addonGroups = groups.filter { it.streams.isNotEmpty() || it.isLoading }
+    val addonGroups = groups.providerSections().filter { it.streams.isNotEmpty() || it.isLoading }
         .sortedBy { providerDisplayName(it.addonName).lowercase() }
     val scrollState = rememberScrollState()
 
@@ -936,8 +939,6 @@ private const val STREAM_CONTENT_TYPE_BOTTOM_SPACER = "streams_bottom_spacer"
 private data class StreamSectionRenderModel(
     val sectionKey: String,
     val group: AddonStreamGroup,
-    val audioGroup: StreamAudioGroup,
-    val showAudioHeader: Boolean,
     val sources: List<StreamSourceRenderModel>,
     val showSourceHeaders: Boolean,
 )
@@ -1061,19 +1062,16 @@ internal fun StreamList(
 }
 
 private fun buildStreamSectionRenderModels(groups: List<AddonStreamGroup>): List<StreamSectionRenderModel> =
-    groups.audioSections().flatMap { audioSection ->
-        audioSection.groups.withDuplicateSafeLazyKeys { group -> streamSectionRenderKey(group) }
+    groups.providerSections().withDuplicateSafeLazyKeys { group -> streamSectionRenderKey(group) }
         .mapIndexed { index, keyedGroup ->
             val group = keyedGroup.value
-            val sectionKey = "${audioSection.audioGroup.name}:${keyedGroup.lazyKey}"
+            val sectionKey = keyedGroup.lazyKey.toString()
             val streamsBySource = group.streams.groupBy(::streamSourceName)
             val sortedSources = streamsBySource.keys.sortedBy { it.lowercase() }
 
             StreamSectionRenderModel(
                 sectionKey = sectionKey,
                 group = group,
-                audioGroup = audioSection.audioGroup,
-                showAudioHeader = index == 0 && audioSection.groups.any { it.streams.isNotEmpty() },
                 sources = sortedSources.map { sourceName ->
                     StreamSourceRenderModel(
                         sourceKey = streamSourceRenderKey(sectionKey = sectionKey, sourceName = sourceName),
@@ -1098,7 +1096,6 @@ private fun buildStreamSectionRenderModels(groups: List<AddonStreamGroup>): List
                 showSourceHeaders = sortedSources.size > 1,
             )
         }
-    }
 
 private fun LazyListScope.streamSection(
     section: StreamSectionRenderModel,
@@ -1118,12 +1115,6 @@ private fun LazyListScope.streamSection(
 ) {
     val group = section.group
     if (group.streams.isEmpty() && !group.isLoading) return
-
-    if (section.showAudioHeader) {
-        item(key = "stream_audio_${section.audioGroup.name}", contentType = STREAM_CONTENT_TYPE_SECTION_HEADER) {
-            StreamSourceHeader(sourceName = section.audioGroup.label)
-        }
-    }
 
     if (showHeader) {
         item(

@@ -392,6 +392,9 @@ internal fun PlayerScreenRuntime.playNextEpisode() {
         contentType = contentType,
         settings = playerSettingsUiState,
         currentStreamBingeGroup = currentStreamBingeGroup,
+        currentProviderId = activeProviderAddonId,
+        currentProviderName = activeProviderName,
+        currentStreamLabel = activeStreamTitle,
         onDownloadedEpisodeSelected = { item, episode -> switchToDownloadedEpisode(item, episode) },
         onEpisodeStreamSelected = { stream, episode -> switchToEpisodeStream(stream, episode) },
         onManualSelectionRequired = { nextVideo ->

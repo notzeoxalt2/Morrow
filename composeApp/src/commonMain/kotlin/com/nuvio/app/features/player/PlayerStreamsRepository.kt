@@ -17,7 +17,6 @@ import com.nuvio.app.features.plugins.PluginsUiState
 import com.nuvio.app.features.plugins.normalizePluginType
 import com.nuvio.app.features.plugins.contentParentId
 import com.nuvio.app.features.plugins.pluginContentId
-import com.nuvio.app.features.providers.offline.OfflineAnimeProviders
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.InstalledStreamAddonTarget
@@ -341,97 +340,8 @@ object PlayerStreamsRepository {
                 )
             }
 
-        val overriddenOfflineProviderNames = pluginScrapers.map { it.name.lowercase() }.toSet()
-        val offlineAnimeGroups = if (isAnime) {
-            listOf(
-                AddonStreamGroup(
-                    addonName = "AnimeDekho",
-                    addonId = "offline:animedekho",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "SaltAnime",
-                    addonId = "offline:saltanime",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "HiAnime",
-                    addonId = "offline:hianime",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "Anikage",
-                    addonId = "offline:anikage",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "Miruro",
-                    addonId = "offline:miruro",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AnimePahe",
-                    addonId = "offline:animepahe",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AnimeX",
-                    addonId = "offline:animex",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AnimeTVPlus",
-                    addonId = "offline:animetvplus",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "Aniflix",
-                    addonId = "offline:aniflix",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AniWaves",
-                    addonId = "offline:aniwaves",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "Kaa",
-                    addonId = "offline:kaa",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "AnimeHeaven",
-                    addonId = "offline:animeheaven",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "JustAnime",
-                    addonId = "offline:justanime",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-                AddonStreamGroup(
-                    addonName = "KissKH",
-                    addonId = "offline:kisskh",
-                    streams = emptyList(),
-                    isLoading = true,
-                ),
-            )
-        } else {
-            emptyList()
-        }.filterNot { it.addonName.lowercase() in overriddenOfflineProviderNames }
+        val offlineAnimeGroups = emptyList<AddonStreamGroup>()
+
 
         if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && offlineAnimeGroups.isEmpty()) {
             stateFlow.value = StreamsUiState(
@@ -628,22 +538,7 @@ object PlayerStreamsRepository {
                 videoId.startsWith("kitsu:") || videoId.startsWith("mal:") || videoId.startsWith("anilist:") ||
                 resolvedParentId.startsWith("kitsu:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("anilist:")
 
-            if (isAnime) {
-                launch {
-                    OfflineAnimeProviders.fetchAllStreams(
-                        excludedProviderNames = overriddenOfflineProviderNames,
-                        title = cleanTitle,
-                        mediaLookupId = mediaLookupId,
-                        type = type,
-                        year = metaYear,
-                        season = season,
-                        episode = episode,
-                        onGroupLoaded = { group ->
-                            publishStreamGroup(presentStreamGroup(group))
-                        }
-                    )
-                }
-            }
+
 
             val pluginSemaphore = Semaphore(permits = 20)
             pluginProviderGroups.forEach { providerGroup ->

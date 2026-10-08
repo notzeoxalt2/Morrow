@@ -28,6 +28,9 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     contentType: String?,
     settings: PlayerSettingsUiState,
     currentStreamBingeGroup: String?,
+    currentProviderId: String? = null,
+    currentProviderName: String = "",
+    currentStreamLabel: String = "",
     onDownloadedEpisodeSelected: (DownloadItem, MetaVideo) -> Unit,
     onEpisodeStreamSelected: (StreamItem, MetaVideo) -> Unit,
     onManualSelectionRequired: (MetaVideo) -> Unit,
@@ -56,11 +59,13 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     onSourceNameChanged(null)
     onCountdownChanged(null)
 
+    val sourcePreference = NextEpisodeSourcePreference(currentProviderId, currentProviderName, currentStreamLabel, currentStreamBingeGroup)
+    val keepCurrentServer = sourcePreference.hasIdentity
     val type = contentType ?: parentMetaType
     val shouldAutoSelectInManualMode =
         settings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL &&
             (
-                settings.streamAutoPlayNextEpisodeEnabled ||
+                keepCurrentServer || settings.streamAutoPlayNextEpisodeEnabled ||
                     settings.streamAutoPlayPreferBingeGroup
                 )
 
@@ -139,21 +144,22 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
 
         fun trySelectStream(streams: List<StreamItem>): StreamItem? =
             StreamAutoPlaySelector.selectAutoPlayStream(
-                streams = streams,
-                mode = effectiveMode,
-                regexPattern = effectiveRegex,
-                source = effectiveSource,
+                streams = if (keepCurrentServer) sourcePreference.matches(streams) else streams,
+                mode = if (keepCurrentServer) StreamAutoPlayMode.FIRST_STREAM else effectiveMode,
+                regexPattern = if (keepCurrentServer) "" else effectiveRegex,
+                source = if (keepCurrentServer) StreamAutoPlaySource.ALL_SOURCES else effectiveSource,
                 installedAddonNames = installedAddonNames,
-                selectedAddons = effectiveSelectedAddons,
-                selectedPlugins = effectiveSelectedPlugins,
+                selectedAddons = if (keepCurrentServer) emptySet() else effectiveSelectedAddons,
+                selectedPlugins = if (keepCurrentServer) emptySet() else effectiveSelectedPlugins,
                 preferredBingeGroup = preferredBingeGroup,
                 preferBingeGroupInSelection = settings.streamAutoPlayPreferBingeGroup,
-                bingeGroupOnly = bingeGroupOnlyManualMode,
+                bingeGroupOnly = !keepCurrentServer && bingeGroupOnlyManualMode,
                 debridEnabled = debridSettings.canResolvePlayableLinks,
                 activeResolverProviderId = debridSettings.activeResolverProviderId,
             )
 
         fun tryBingeGroupOnly(streams: List<StreamItem>): StreamItem? {
+            if (keepCurrentServer) return trySelectStream(streams)
             if (preferredBingeGroup == null || !settings.streamAutoPlayPreferBingeGroup) return null
             return StreamAutoPlaySelector.selectAutoPlayStream(
                 streams = streams,
@@ -211,9 +217,11 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
         val selected = selectedStream
         if (selected != null) {
             onSourceNameChanged(selected.addonName)
-            for (i in 3 downTo 1) {
-                onCountdownChanged(i)
-                delay(1000)
+            if (!keepCurrentServer) {
+                for (i in 3 downTo 1) {
+                    onCountdownChanged(i)
+                    delay(1000)
+                }
             }
             onEpisodeStreamSelected(selected, nextVideo)
             onNextEpisodeCardVisibleChanged(false)

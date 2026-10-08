@@ -12,7 +12,6 @@ import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.normalizePluginType
 import com.nuvio.app.features.plugins.contentParentId
 import com.nuvio.app.features.plugins.pluginContentId
-import com.nuvio.app.features.providers.offline.OfflineAnimeProviders
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -278,27 +277,7 @@ object EpisodeStreamPrefetcher {
                  meta.language?.equals("ja", ignoreCase = true) == true ||
                  meta.language?.contains("Japanese", ignoreCase = true) == true))
 
-        val offlineJob = if (isAnime) {
-            scope.launch {
-                runCatching {
-                    OfflineAnimeProviders.fetchAllStreams(
-                        title = cleanTitle,
-                        mediaLookupId = mediaLookupId,
-                        type = type,
-                        year = metaYear,
-                        season = season,
-                        episode = episode,
-                        onGroupLoaded = { group ->
-                            if (group.streams.isNotEmpty()) {
-                                synchronized(collectedGroups) {
-                                    collectedGroups.add(group.copy(isLoading = false))
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-        } else null
+
 
         // 2. Stremio Addons
         val installedAddons = AddonRepository.uiState.value.addons.enabledAddons()
@@ -406,7 +385,6 @@ object EpisodeStreamPrefetcher {
             }
         } else emptyList()
 
-        offlineJob?.join()
         addonJobs.forEach { it.join() }
         pluginJobs.forEach { it.join() }
 

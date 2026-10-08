@@ -1,5 +1,6 @@
 package com.nuvio.app.features.plugins
 
+import com.nuvio.app.features.streams.StreamSessionCache
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.network.SupabaseProvider
 import com.nuvio.app.features.addons.encodeUnsafeHttpUrlCharacters
@@ -118,6 +119,7 @@ actual object PluginRepository {
         if (effectiveProfileId == currentProfileId && initialized) return
 
         cancelActiveRefreshes()
+        StreamSessionCache.clear()
         currentProfileId = effectiveProfileId
         initialized = false
         _uiState.value = PluginsUiState()
@@ -143,7 +145,7 @@ actual object PluginRepository {
                 }
                 .decodeList<PluginRow>()
 
-            val urls = dedupeManifestUrls(rows.map { it.url })
+            val urls = MorrowProviderMigration.repositoryUrls(dedupeManifestUrls(rows.map { it.url }))
             val existingState = _uiState.value
             val existingReposByUrl = existingState.repositories.associateBy { it.manifestUrl }
             val nowEpochMs = currentEpochMillis()
@@ -168,7 +170,8 @@ actual object PluginRepository {
                 }
             }
             val nextScrapers = existingState.scrapers.filter { scraper ->
-                urls.contains(scraper.repositoryUrl)
+                urls.contains(MorrowProviderMigration.canonical(scraper.repositoryUrl)) &&
+                    !MorrowProviderMigration.isRetiredScraper(scraper.repositoryUrl, scraper.id)
             }
 
             _uiState.value = PluginsUiState(
@@ -273,6 +276,7 @@ actual object PluginRepository {
                     if (state.repositories.none { it.manifestUrl == manifestUrl }) return@update state
                     result.fold(
                         onSuccess = { (repo, scrapers) ->
+                            StreamSessionCache.clear()
                             val updatedRepos = state.repositories.map { existing ->
                                 if (existing.manifestUrl == manifestUrl) repo else existing
                             }
@@ -459,7 +463,8 @@ actual object PluginRepository {
             val downloadSemaphore = Semaphore(10)
             val scrapers = coroutineScope {
                 manifest.scrapers
-                    .filter { scraper -> scraper.isSupportedOnCurrentPlatform() }
+                    .filter { scraper -> scraper.isSupportedOnCurrentPlatform() &&
+                        !MorrowProviderMigration.isRetiredScraper(manifestUrl, scraper.id) }
                     .map { info ->
                         async {
                             downloadSemaphore.withPermit {
@@ -488,6 +493,7 @@ actual object PluginRepository {
                                     val previous = previousScrapers[scraperId]
                                     val enabled = when {
                                         !info.enabled -> false
+                                        previous?.manifestEnabled == false -> true
                                         previous != null -> previous.enabled
                                         else -> info.enabled
                                     }
@@ -671,15 +677,6 @@ actual object PluginRepository {
     private fun loadStateAsUiState(profileId: Int): LoadedPluginState {
         val stored = loadStoredState(profileId)
         var requiresMigration = false
-        val legacyRepoUrls = setOf(
-            "https://raw.githubusercontent.com/notzeoxalt2/morrowx2anime/main/manifest.json",
-            "https://raw.githubusercontent.com/notzeoxalt2/morrowx2anime/refs/heads/main/manifest.json",
-            "https://raw.githubusercontent.com/notzeoxalt2/Morrow/main/providers/manifest.json",
-            "https://raw.githubusercontent.com/D3adlyRocket/All-in-One-Nuvio/refs/heads/main/manifest.json",
-            "https://raw.githubusercontent.com/yoruix/nuvio-providers/refs/heads/main/manifest.json",
-            "https://raw.githubusercontent.com/Abinanthankv/NuvioRepo/refs/heads/master/manifest.json",
-            "https://raw.githubusercontent.com/michat88/nuvio-providers/refs/heads/main/manifest.json",
-        )
         val rawScrapers = stored?.scrapers
             ?.mapNotNull { storedScraper ->
                 storedScraper.restorePluginScraper { scraperId ->
@@ -689,15 +686,22 @@ actual object PluginRepository {
                 }?.scraper
             }
             ?: emptyList()
-        if (rawScrapers.any { it.repositoryUrl in legacyRepoUrls }) {
+        if (rawScrapers.any { MorrowProviderMigration.isRetiredScraper(it.repositoryUrl, it.id) ||
+            MorrowProviderMigration.canonical(it.repositoryUrl) != it.repositoryUrl }) {
             requiresMigration = true
         }
-        val scrapers = rawScrapers.filterNot { it.repositoryUrl in legacyRepoUrls }
-        val defaultPluginRepoUrls = listOf(
-            "https://raw.githubusercontent.com/notzeoxalt2/morrowx1movies/main/manifest.json",
-            "https://raw.githubusercontent.com/notzeoxalt2/morrowx1anime/main/manifest.json",        )
-        val storedRepos = stored?.repositories?.filterNot { it.manifestUrl in legacyRepoUrls }
-        if (stored?.repositories?.any { it.manifestUrl in legacyRepoUrls } == true) {
+        val scrapers = rawScrapers.filterNot { MorrowProviderMigration.isRetiredScraper(it.repositoryUrl, it.id) }
+            .map { scraper ->
+                val url = MorrowProviderMigration.canonical(scraper.repositoryUrl)
+                if (url == scraper.repositoryUrl) scraper else
+                    scraper.copy(repositoryUrl = url, id = "$url:${scraper.id.substringAfterLast(':')}")
+            }.distinctBy { it.id }
+        val defaultPluginRepoUrls = MorrowProviderMigration.defaults
+        val storedRepos = stored?.repositories?.filterNot { MorrowProviderMigration.isLegacy(it.manifestUrl) }
+            ?.map { it.copy(manifestUrl = MorrowProviderMigration.canonical(it.manifestUrl)) }
+            ?.distinctBy { it.manifestUrl }
+        if (stored?.repositories?.any { MorrowProviderMigration.isLegacy(it.manifestUrl) ||
+            MorrowProviderMigration.canonical(it.manifestUrl) != it.manifestUrl } == true) {
             requiresMigration = true
         }
         val existingUrls = storedRepos?.map { it.manifestUrl }?.toSet().orEmpty()

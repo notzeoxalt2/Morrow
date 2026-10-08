@@ -139,9 +139,10 @@ internal fun PluginRuntimeResult.toStreamItem(
 internal fun List<StreamItem>.sortedForGroupedDisplay(): List<StreamItem> =
     sortedWith(
         compareBy<StreamItem>(
-            { it.audioGroup().ordinal },
             { providerDisplayName(it.addonName).lowercase() },
             { it.sourceName.orEmpty().lowercase() },
+            { it.serverDisplayKey() },
+            { it.audioGroup().ordinal },
             { -Regex("(2160|1440|1080|720|480|360)p", RegexOption.IGNORE_CASE).find(it.streamLabel + " " + it.streamSubtitle.orEmpty())?.groupValues?.get(1).let { it?.toIntOrNull() ?: 0 } },
             { it.streamLabel.lowercase() },
             { it.streamSubtitle.orEmpty().lowercase() },

@@ -20,17 +20,24 @@ internal fun StreamItem.audioGroup(): StreamAudioGroup {
     }
 }
 
-internal data class StreamAudioSection(val audioGroup: StreamAudioGroup, val groups: List<AddonStreamGroup>)
 
-internal fun List<AddonStreamGroup>.audioSections(): List<StreamAudioSection> =
-    StreamAudioGroup.entries.mapNotNull { audio ->
-        val sections = sortedBy { providerDisplayName(it.addonName).lowercase() }.mapNotNull { group ->
-            val streams = group.streams.filter { it.audioGroup() == audio }.sortedForGroupedDisplay()
-            when {
-                streams.isNotEmpty() -> group.copy(streams = streams, isLoading = false)
-                audio == StreamAudioGroup.OTHER && group.isLoading -> group.copy(streams = emptyList())
-                else -> null
-            }
-        }
-        sections.takeIf { it.isNotEmpty() }?.let { StreamAudioSection(audio, it) }
-    }
+/** One visual provider section, even if profile sync contains duplicate instances. */
+internal fun List<AddonStreamGroup>.providerSections(): List<AddonStreamGroup> =
+    groupBy { providerDisplayName(it.addonName).lowercase() }.map { (name, groups) ->
+        AddonStreamGroup(
+            addonName = providerDisplayName(groups.first().addonName),
+            addonId = "provider-name:$name",
+            streams = groups.flatMap { it.streams }.distinctBy {
+                listOf(it.playableDirectUrl, it.infoHash, it.fileIdx, it.streamLabel,
+                    it.behaviorHints.proxyHeaders?.request)
+            }.sortedForGroupedDisplay(),
+            isLoading = groups.any { it.isLoading },
+            error = groups.firstNotNullOfOrNull { it.error },
+        )
+    }.sortedBy { it.addonName.lowercase() }
+
+internal fun StreamItem.serverDisplayKey(): String = streamLabel.lowercase()
+    .replace(Regex("""\[(?:sub|dub|hsub|s-sub|h-sub)\]"""), "")
+    .replace(Regex("""\b(?:japanese sub|english dub|hindi dub|tamil dub|telugu dub|kannada dub|malayalam dub|\d{3,4}p|4k|8k|auto)\b"""), "")
+    .replace(Regex("""[|·:/\-]+\s*$"""), "")
+    .replace(Regex("""\s+"""), " ").trim()
