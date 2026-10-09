@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -810,8 +811,10 @@ internal fun ProviderFilterRow(
     modifier: Modifier = Modifier,
 ) {
     val addonGroups = groups.providerSections().filter { it.streams.isNotEmpty() || it.isLoading }
-        .sortedBy { providerDisplayName(it.addonName).lowercase() }
+        .sortedWith(compareBy<AddonStreamGroup> { it.addonId != selectedFilter }
+            .thenBy { providerDisplayName(it.addonName).lowercase() })
     val scrollState = rememberScrollState()
+    LaunchedEffect(selectedFilter) { scrollState.scrollTo(0) }
 
     Row(
         modifier = modifier
@@ -843,12 +846,14 @@ internal fun ProviderFilterRow(
         addonGroups.filter { group ->
             selectedFilter?.startsWith("category:") != true || selectedFilter.removePrefix("category:") in group.sourceCategories
         }.forEach { group ->
-            FilterChip(
-                label = providerDisplayName(group.addonName),
-                logoUrl = group.streams.firstNotNullOfOrNull { it.addonLogo },
-                isSelected = selectedFilter == group.addonId,
-                onClick = { onFilterSelected(group.addonId) },
-            )
+            key(group.addonId) {
+                FilterChip(
+                    label = providerDisplayName(group.addonName),
+                    logoUrl = group.streams.firstNotNullOfOrNull { it.addonLogo },
+                    isSelected = selectedFilter == group.addonId,
+                    onClick = { onFilterSelected(group.addonId) },
+                )
+            }
         }
     }
 }
@@ -984,6 +989,7 @@ internal fun StreamList(
     }
     val torrentNotSupportedText = stringResource(Res.string.streams_torrent_not_supported)
     val listState = rememberLazyListState()
+    LaunchedEffect(uiState.selectedFilter) { listState.scrollToItem(0) }
     val fetchingText = stringResource(Res.string.streams_fetching)
     val findingStreamsText = stringResource(Res.string.streams_finding_streams)
     val checkingMoreAddonsText = stringResource(Res.string.streams_checking_more_addons)

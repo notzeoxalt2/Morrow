@@ -8,6 +8,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class PlayerNextEpisodeStreamSelectionTest {
+    @Test fun readyServerDoesNotWaitThroughConfiguredDelay() = kotlinx.coroutines.runBlocking {
+        val ready = kotlinx.coroutines.CompletableDeferred<Unit>()
+        ready.complete(Unit)
+        val started = kotlin.time.TimeSource.Monotonic.markNow()
+        awaitNextEpisodeSelectionWindow(ready, 5_000L)
+        kotlin.test.assertTrue(started.elapsedNow().inWholeMilliseconds < 1_000L)
+    }
+
     @Test
     fun `selection timeout keeps waiting while matching source is loading`() {
         val unrelated = stream("Fast", "fast", "other")

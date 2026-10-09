@@ -37,3 +37,8 @@ internal class NextEpisodeStreamSelectionCoordinator(
         }
     }
 }
+
+/** An available matching server ends the selection window immediately. */
+internal suspend fun awaitNextEpisodeSelectionWindow(selection: kotlinx.coroutines.Deferred<Unit>, timeoutMs: Long) {
+    kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { selection.await() }
+}

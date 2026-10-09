@@ -33,4 +33,9 @@ class NextEpisodeSourcePreferenceTest {
         val correct = stream("Next")
         assertEquals(listOf(correct), preference.matches(listOf(stream("Next", "another"), correct)))
     }
+    @Test fun multiAudioTrackCountDoesNotChangeServerIdentity() {
+        val preference = NextEpisodeSourcePreference("salt", "AnimeSalt", "AnimeSalt | MyStream · Multi-Audio (7 tracks) [Multi-Audio]", null)
+        val next = stream("AnimeSalt | MyStream · Multi-Audio (5 tracks) [Multi-Audio]", "salt")
+        assertEquals(listOf(next), preference.matches(listOf(next)))
+    }
 }

@@ -24,6 +24,8 @@ internal data class NextEpisodeSourcePreference(
 
 private fun stableLabel(value: String): String = value.lowercase()
     .replace(Regex("""\b(?:\d{3,4}p|4k|8k|auto)\b"""), "")
+    .replace(Regex("""\b\d+\s+tracks?\b"""), "")
     .trim()
     .replace(Regex("""[|·:/\-]+\s*$"""), "")
+    .replace(Regex("""[|·:/\-\[\]()]+"""), " ")
     .replace(Regex("""\s+"""), " ").trim()
