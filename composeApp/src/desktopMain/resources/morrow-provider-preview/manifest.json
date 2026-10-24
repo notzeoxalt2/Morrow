@@ -1,0 +1,588 @@
+{
+  "name": "Morrow Anime X1",
+  "version": "1.8.4-preview.1",
+  "description": "Unified Morrow anime adapters. Exact content and native playback evidence is listed in PROVIDER_STATUS.md.",
+  "scrapers": [
+    {
+      "id": "hianime-site",
+      "name": "HiAnime",
+      "description": "Genuine hianime.at catalog and exact episode/server API. MegaPlay CDN uses browser origin Referer. Oct 22 returned SUB/DUB sources for four episode requests decoded through Morrow; every title/server is not certified.",
+      "version": "1.8.4-preview.1",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/hianime-site.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/hianime.png"
+    },
+    {
+      "id": "animepahe",
+      "name": "AnimePahe",
+      "description": "Legacy Anidap route previously displayed under this site name. Consolidated under the genuine Anidap adapter; separate site integration pending.",
+      "version": "1.8.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/animepahe.js",
+      "enabled": false,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/animepahe.png"
+    },
+    {
+      "id": "animesalt",
+      "name": "AnimeSalt",
+      "description": "Genuine AnimeSalt catalog, current and legacy audio wrappers, explicit season loading, exact episode selection, signed MyStream HLS. One Piece/Naruto S1E1 Hindi/English/Japanese decoded in Morrow; Abyss transport is not verified.",
+      "version": "1.8.4-preview.1",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/animesalt.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/default.png"
+    },
+    {
+      "id": "anidb",
+      "name": "AniDB",
+      "description": "Legacy Anidap route previously displayed under this site name. Consolidated under the genuine Anidap adapter; separate site integration pending.",
+      "version": "1.8.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/anidb.js",
+      "enabled": false,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "anikage",
+      "name": "Anikage",
+      "description": "Exact Anikage catalog matching and validated media sources",
+      "version": "1.8.3",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/anikage.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/anicore.png"
+    },
+    {
+      "id": "anikototv",
+      "name": "Anikoto",
+      "description": "Retired adapter identity. The genuine replacement uses anikoto-site so Morrow migration cannot restore the old alias.",
+      "version": "1.8.4-preview.1",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/anikototv.js",
+      "enabled": false,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/animoe.png"
+    },
+    {
+      "id": "aniwaves",
+      "name": "Aniwaves",
+      "description": "Legacy Anidap route previously displayed under this site name. Consolidated under the genuine Anidap adapter; separate site integration pending.",
+      "version": "1.8.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/aniwaves.js",
+      "enabled": false,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/animetto2.png"
+    },
+    {
+      "id": "anitaku",
+      "name": "Anitaku",
+      "description": "Legacy Anidap route previously displayed under this site name. Consolidated under the genuine Anidap adapter; separate site integration pending.",
+      "version": "1.8.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/anitaku.js",
+      "enabled": false,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "miruro",
+      "name": "Miruro",
+      "description": "Miruro anime source adapter",
+      "version": "1.8.3",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/miruro.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/miruro.png"
+    },
+    {
+      "id": "reanime",
+      "name": "ReAnime",
+      "description": "ReAnime anime source adapter",
+      "version": "1.8.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/reanime.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/reanime.png"
+    },
+    {
+      "id": "animeheaven",
+      "name": "AnimeHeaven",
+      "description": "AnimeHeaven anime source adapter",
+      "version": "1.8.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/animeheaven.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/animeheavenme.png"
+    },
+    {
+      "id": "kurage",
+      "name": "Kurage",
+      "description": "Legacy Anidap route previously displayed under this site name. Consolidated under the genuine Anidap adapter; separate site integration pending.",
+      "version": "1.8.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/kurage.js",
+      "enabled": false,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "animedekho",
+      "name": "AnimeDekho",
+      "description": "Current domain animedekho.tv confirmed by user. Genuine catalog/episode routes researched; watch API requires interactive unlock. Separate native integration is not verified.",
+      "version": "1.8.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/animedekho.js",
+      "enabled": false,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/animedekho.png"
+    },
+    {
+      "id": "anime-nexus",
+      "name": "Anime Nexus",
+      "description": "Legacy Anidap route previously displayed under this site name. Consolidated under the genuine Anidap adapter; separate site integration pending.",
+      "version": "1.8.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/anime-nexus.js",
+      "enabled": false,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/animenexus.png"
+    },
+    {
+      "id": "lunarx",
+      "name": "LunarX",
+      "description": "Legacy Anidap route previously displayed under this site name. Consolidated under the genuine Anidap adapter; separate site integration pending.",
+      "version": "1.8.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/lunarx.js",
+      "enabled": false,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/lunaranime.png"
+    },
+    {
+      "id": "saltanime",
+      "name": "SaltAnime",
+      "description": "SaltAnime anime source adapter",
+      "version": "1.8.3",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/saltanime.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "kickassanime",
+      "name": "KickAssAnime",
+      "description": "Actual kaa.lt HLS player manifests; multi-audio where published by the host",
+      "version": "1.0.0",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/kickassanime.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/kaa.png"
+    },
+    {
+      "id": "anidap",
+      "name": "Anidap",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/anidap.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en"
+      ],
+      "version": "1.8.1",
+      "description": "Anidap actual catalog and stream API; exact requested anime and episode checks.",
+      "logo": "https://static.everythingmoe.com/icons/anidap.png"
+    },
+    {
+      "id": "anistream",
+      "name": "Anistream",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/anistream.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en"
+      ],
+      "version": "1.8.1",
+      "description": "Anistream actual catalog and stream API; exact requested anime and episode checks.",
+      "logo": "https://static.everythingmoe.com/icons/anistream.png"
+    },
+    {
+      "id": "animex",
+      "name": "AnimeX",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/animex.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en"
+      ],
+      "version": "1.8.1",
+      "description": "AnimeX actual catalog and stream API; exact requested anime and episode checks.",
+      "logo": "https://static.everythingmoe.com/icons/animexone.png"
+    },
+    {
+      "id": "justanime",
+      "name": "JustAnime",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/justanime.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en"
+      ],
+      "version": "1.8.0",
+      "description": "Actual JustAnime catalog, exact requested episode and listed SUB/DUB servers. Selected One Piece E1 and Boruto E3 decoded at 1080p through Morrow.",
+      "logo": "https://static.everythingmoe.com/icons/justanime.png"
+    },
+    {
+      "id": "animeworld",
+      "name": "AnimeWorld",
+      "description": "Genuine watchanimeworld.one catalog and season API, signed FirePlayer multi-audio HLS. Naruto S1E1 Hindi/English/Japanese decoded through Morrow. Not every title/server is certified.",
+      "enabled": true,
+      "logo": "https://watchanimeworld.one/wp-content/uploads/cropped-AW_Smiley-192x192.png",
+      "version": "1.8.4-preview.1",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/animeworld.js",
+      "hasSettings": false,
+      "formats": [
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "aniflix",
+      "name": "AniFlix",
+      "description": "Experimental genuine AniFlix episode/server adapter. Current API service quota (Cloudflare 1027), API host migration and remaining playback verification prevent enabling this adapter.",
+      "enabled": false,
+      "logo": "https://aniflix.uno/favicon.ico",
+      "version": "1.8.4-preview.1",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/aniflix.js",
+      "hasSettings": false,
+      "formats": [
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "animegg",
+      "name": "ANIMEGG",
+      "description": "Genuine ANIMEGG exact catalog, explicit episode links and actual SUB/DUB servers. Naruto E1 Japanese/English MP4 video/audio decoded through Morrow. Movies and every title/server are not certified.",
+      "enabled": true,
+      "logo": "https://www.animegg.org/images/animegg-favicon.png",
+      "version": "1.8.4-preview.1",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/animegg.js",
+      "hasSettings": false,
+      "formats": [
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en"
+      ]
+    },
+    {
+      "id": "anikoto-site",
+      "name": "Anikoto",
+      "description": "Genuine Anikoto catalog and exact episode/server routes. All six returned Naruto E1 servers (three SUB, three DUB) decoded through Morrow. New identity avoids the retired alias filter; other titles are not certified.",
+      "version": "1.8.4-preview.1",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/anikototv.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en",
+        "hi"
+      ],
+      "logo": "https://static.everythingmoe.com/icons/animoe.png"
+    },
+    {
+      "id": "meguanimes",
+      "name": "MeguAnimes",
+      "description": "Genuine MeguAnimes language routes and published provider roster. Thirteen returned Naruto S1E1 sources (SUB/DUB) decoded through Morrow native proxy/libmpv, including AniWaves, Anikoto, Zoko, Kiwi, Miruro, and MegaPlay routes. Other titles and servers are not certified.",
+      "enabled": true,
+      "logo": "https://meguanime.com/favicon.png",
+      "version": "1.8.4-preview.1",
+      "author": "Morrow Team",
+      "supportedTypes": [
+        "anime"
+      ],
+      "filename": "providers/meguanimes.js",
+      "hasSettings": false,
+      "formats": [
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "ja",
+        "en"
+      ]
+    }
+  ]
+}

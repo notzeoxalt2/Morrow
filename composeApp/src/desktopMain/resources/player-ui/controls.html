@@ -31,6 +31,7 @@
     <symbol id="icon-flag" viewBox="0 0 24 24">
       <path d="M5 21V4.6c0-.38.21-.72.55-.89 2.15-1.08 4.18.32 6.12.32 1.58 0 3.1-.72 5.26-.72.55 0 1 .45 1 1v9.72c0 .41-.25.78-.63.93-2.03.8-3.79.1-5.46.1-1.94 0-3.55 1.13-5.84.38V21H5Z"/>
     </symbol>
+    <symbol id="icon-back" viewBox="0 0 24 24"><path d="M20 12H4m7-7-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="icon-close" viewBox="0 0 24 24">
       <path d="M6 6L18 18" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"/>
       <path d="M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"/>
@@ -57,9 +58,7 @@
       <path d="M20.38 8.57l-1.23 1.85A8 8 0 0 1 18.93 18H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44Z"/>
       <path d="M10.59 15.41a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83Z"/>
     </symbol>
-    <symbol id="icon-subs" viewBox="0 0 24 24">
-      <path fill="none" stroke="currentColor" stroke-width="2" d="M1,12 C1,5 2.5,4 12,4 C21.5,4 23,5 23,12 C23,19 21.5,20 12,20 C2.5,20 1,19 1,12 Z M5.25,14 C5.25,15.5 6,16 7.75,16 C9.5,16 10.25,15.5 10.25,14 L9.97861679,14 C9.97861671,15.25 8.97905547,16 7.75,16 C6.52094453,16 5.52138329,15.25 5.52138321,14 L5.52138321,10 C5.5,8.75 6.5,8 7.75,8 C9,8 10,8.75 9.97861679,10 L10.25,10 C10.25,8.75 9.2286998,8 7.75,8 C6.2713002,8 5.25,8.75 5.25,10 L5.25,14 Z M13.25,14 C13.25,15.5 14,16 15.75,16 C17.5,16 18.25,15.5 18.25,14 L17.9786168,14 C17.9786167,15.25 16.9790555,16 15.75,16 C14.5209445,16 13.5213833,15.25 13.5213832,14 L13.5213832,10 C13.5,8.75 14.5,8 15.75,8 C17,8 18,8.75 17.9786168,10 L18.25,10 C18.25,8.75 17.2286998,8 15.75,8 C14.2713002,8 13.25,8.75 13.25,10 L13.25,14 Z"/>
-    </symbol>
+    <symbol id="icon-subs" viewBox="0 0 24 24"><path d="M3 4h18v13H9l-6 4V4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M6 8h12M6 12h5m3 0h4" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
     <symbol id="icon-audio" viewBox="0 0 24 24">
       <path d="M12 6.25C11.3096 6.25 10.75 6.80964 10.75 7.5C10.75 8.19036 11.3096 8.75 12 8.75C12.6904 8.75 13.25 8.19036 13.25 7.5C13.25 6.80964 12.6904 6.25 12 6.25Z"/>
       <path d="M9.75 15.5C9.75 14.2574 10.7574 13.25 12 13.25C13.2426 13.25 14.25 14.2574 14.25 15.5C14.25 16.7426 13.2426 17.75 12 17.75C10.7574 17.75 9.75 16.7426 9.75 15.5Z"/>
@@ -139,8 +138,7 @@
           <button class="header-button" id="videoSettingsButton" data-command="videoSettings" aria-label="Video settings"><svg><use href="#icon-build"></use></svg></button>
           <button class="header-button pip-lock-button" id="pipLockButton" type="button" aria-pressed="false" aria-label="Lock player controls"><svg><use href="#icon-lock"></use></svg></button>
           <button class="header-button" id="pipButton" data-command="pictureInPicture" aria-label=""><svg><use href="#icon-pip"></use></svg></button>
-          <button class="header-button" id="fullscreenButton" data-command="toggleFullscreen" aria-label="Enter fullscreen"><svg><use id="fullscreenIcon" href="#icon-fullscreen"></use></svg></button>
-          <button class="header-button" id="backButton" data-command="back" aria-label="Close player"><svg><use href="#icon-close"></use></svg></button>
+          <button class="header-button" id="backButton" data-command="back" aria-label="Close player"><svg><use href="#icon-back"></use></svg></button>
         </nav>
       </header>
 
@@ -200,42 +198,42 @@
       </button>
 
       <section class="progress" aria-label="Playback progress">
-        <section class="metadata" aria-label="Playback metadata">
-          <div class="title" id="title"></div>
-          <div class="episode" id="episode" hidden></div>
-          <div class="meta-row">
-            <span class="stream-title" id="streamTitle"></span>
-            <span class="provider" id="providerName"></span>
-          </div>
-        </section>
-        <input id="seek" class="scrub" type="range" min="0" max="1000" value="0" aria-label="Seek">
+        <div class="seek-row">
+          <input id="seek" class="scrub" type="range" min="0" max="1000" value="0" aria-label="Seek">
+          <div class="time-label" id="timeLabel">00:00</div>
+        </div>
         <div class="time-row">
           <span class="time-pill" id="position">00:00</span>
           <span class="time-pill" id="duration">00:00</span>
         </div>
         <div class="action-row">
-          <div class="action-pill">
+          <div class="transport-controls">
             <button class="action playback-action" id="toggle" data-command="toggle" aria-label="Play">
               <svg><use id="toggleIcon" href="#icon-play"></use></svg><span id="toggleLabel">Play</span>
             </button>
+            <button class="action" data-command="seekBack" aria-label="Back 10 seconds" title="Back 10 seconds"><svg><use href="#icon-replay10"></use></svg></button>
+            <button class="action" data-command="seekForward" aria-label="Forward 10 seconds" title="Forward 10 seconds"><svg><use href="#icon-forward10"></use></svg></button>
+            <div class="volume-control" id="volumeControl" aria-label="Volume">
+              <button class="volume-button" id="volumeButton" aria-label="Mute" type="button">
+                <svg><use id="volumeIcon" href="#icon-volume"></use></svg>
+              </button>
+            </div>
+          </div>
+        <section class="metadata" aria-label="Playback metadata">
+          <div class="title" id="title"></div>
+          <div class="episode" id="episode" hidden></div>
+        </section>
+          <div class="action-pill">
             <button class="action optional" id="nextEpisodeButton" data-command="playNextEpisode" aria-label="Next episode" hidden>
               <svg><use href="#icon-skip-next"></use></svg><span id="nextEpisodeButtonLabel">Next episode</span>
             </button>
             <button class="action" data-command="resize"><svg><use href="#icon-aspect"></use></svg><span id="resizeLabel">Fit</span></button>
             <button class="action" data-command="speed"><svg><use href="#icon-speed"></use></svg><span id="speedLabel">1x</span></button>
             <button class="action" data-command="subtitles"><svg><use href="#icon-subs"></use></svg><span id="subtitlesLabel">Subs</span></button>
-            <button class="action" data-command="audio"><svg><use href="#icon-audio"></use></svg><span id="audioLabel">Audio</span></button>
+            <button class="action" data-command="audio" hidden><svg><use href="#icon-audio"></use></svg><span id="audioLabel">Audio</span></button>
             <button class="action optional" id="sourcesButton" data-command="sources"><svg><use href="#icon-source"></use></svg><span id="sourcesLabel">Quality</span></button>
             <button class="action optional" id="episodesButton" data-command="episodes"><svg><use href="#icon-episodes"></use></svg><span id="episodesLabel">Episodes</span></button>
-          </div>
-          <div class="playback-status">
-            <div class="volume-control" id="volumeControl" aria-label="Volume">
-              <button class="volume-button" id="volumeButton" aria-label="Mute" type="button">
-                <svg><use id="volumeIcon" href="#icon-volume"></use></svg>
-              </button>
-              <input id="volumeSlider" class="volume-slider" type="range" min="0" max="200" value="100" aria-label="Volume">
-            </div>
-            <div class="time-label" id="timeLabel">00:00 / 00:00</div>
+          <button class="action" id="fullscreenButton" data-command="toggleFullscreen" aria-label="Enter fullscreen"><svg><use id="fullscreenIcon" href="#icon-fullscreen"></use></svg></button>
           </div>
         </div>
       </section>
@@ -249,17 +247,13 @@
           <div class="track-list" id="speedOptionList"></div>
         </div>
       </section>
-      <section class="modal-layer player-rail-modal" id="audioModal" aria-label="Audio tracks" hidden>
-        <div class="track-panel audio-rail-panel">
-          <div class="track-header" id="audioPanelTitle">Audio tracks</div>
-          <div class="track-list" id="audioTrackList"></div>
-        </div>
-      </section>
-      <section class="modal-layer player-rail-modal" id="subtitleModal" aria-label="Subtitles" hidden>
+      <section class="modal-layer" id="audioModal" hidden></section>
+      <section class="modal-layer player-rail-modal combined-tracks-modal" id="subtitleModal" aria-label="Audio & Subtitles" hidden>
         <div class="track-panel subtitle-rail-panel">
-          <div class="track-header" id="subtitlePanelTitle">Subtitles</div>
+          <div class="combined-tracks-header"><div class="track-header" id="subtitlePanelTitle">Audio & Subtitles</div><button type="button" class="panel-button" id="trackSettingsButton">Subtitle settings</button></div>
           <div class="subtitle-rails">
-            <section class="subtitle-rail subtitle-language-rail">
+<section class="subtitle-rail combined-audio-rail"><div class="subtitle-rail-title" id="audioPanelTitle">Audio</div><div class="track-list" id="audioTrackList"></div></section>
+            <section class="subtitle-rail subtitle-language-rail" hidden>
               <div class="subtitle-rail-title" id="subtitleLanguageRailTitle">Languages</div>
               <div class="track-list" id="subtitleTrackList"></div>
             </section>

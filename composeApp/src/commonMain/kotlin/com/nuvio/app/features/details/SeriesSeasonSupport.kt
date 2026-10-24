@@ -40,3 +40,33 @@ internal fun MetaDetails.groupedEpisodesForDisplay(): Map<Int, List<MetaVideo>> 
         else -> emptyMap()
     }
 }
+
+/** Returns the one-based broadcast order used by anime catalogs that number episodes across seasons. */
+internal fun MetaDetails.absoluteEpisodeNumber(season: Int?, episode: Int?): Int? {
+    if (season == null || episode == null || season <= SPECIALS_SEASON_NUMBER || episode <= 0) return null
+    val orderedEpisodes = videos
+        .filter { (it.season ?: SPECIALS_SEASON_NUMBER) > SPECIALS_SEASON_NUMBER && (it.episode ?: 0) > 0 }
+        .sortedWith(metaVideoSeasonEpisodeComparator)
+    val index = orderedEpisodes.indexOfFirst { it.season == season && it.episode == episode }
+    return index.takeIf { it >= 0 }?.plus(1)
+}
+
+internal fun MetaDetails.prefersFlatEpisodeCatalog(): Boolean =
+    id.startsWith("anilist:", ignoreCase = true) ||
+        id.startsWith("mal:", ignoreCase = true) ||
+        id.startsWith("kitsu:", ignoreCase = true) ||
+        genres.any { it.contains("anime", ignoreCase = true) } ||
+        (genres.any { it.contains("animation", ignoreCase = true) } &&
+            (country?.contains("JP", ignoreCase = true) == true ||
+                country?.contains("Japan", ignoreCase = true) == true ||
+                language?.equals("ja", ignoreCase = true) == true ||
+                language?.contains("Japanese", ignoreCase = true) == true))
+
+internal fun episodeWindowStart(
+    requestedEpisodeNumber: Int?,
+    episodeCount: Int,
+    pageSize: Int,
+): Int {
+    if (episodeCount <= 0 || pageSize <= 0) return 0
+    return ((requestedEpisodeNumber ?: 1) - 1).coerceIn(0, episodeCount - 1)
+}

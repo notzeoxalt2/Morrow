@@ -143,6 +143,8 @@ internal fun StreamCard(
                 }
             }
 
+            SourceReadinessBadge(stream)
+
             val subtitle = stream.streamSubtitle
             if (!subtitle.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))

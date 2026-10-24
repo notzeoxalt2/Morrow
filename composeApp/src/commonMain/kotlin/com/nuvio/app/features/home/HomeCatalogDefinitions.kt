@@ -53,11 +53,11 @@ fun buildHomeCatalogDefinitions(addons: List<ManagedAddon>): List<HomeCatalogDef
                     defaultTitle = runBlocking {
                         getString(
                             Res.string.home_catalog_default_title,
-                            catalog.name,
+                            catalogDisplayName(catalog.name, catalog.type),
                             localizedMediaTypeLabel(catalog.type),
                         )
                     },
-                    catalogName = catalog.name,
+                    catalogName = catalogDisplayName(catalog.name, catalog.type),
                     addonName = addon.displayTitle,
                     manifestUrl = addon.manifestUrl,
                     type = catalog.type,

@@ -4,6 +4,15 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class StreamCategoryFilterTest {
+ @Test fun combinedFilmAndTvCategoryExcludesAnimeOnlyProviders() {
+  val groups=listOf(
+   AddonStreamGroup("Films","film",emptyList(),sourceCategories=setOf("movies")),
+   AddonStreamGroup("TV","tv",emptyList(),sourceCategories=setOf("series")),
+   AddonStreamGroup("Anime","anime",emptyList(),sourceCategories=setOf("anime")))
+  assertEquals(listOf("film","tv"),StreamsUiState(groups=groups,selectedFilter="category:movies-series").filteredGroups.map{it.addonId})
+  assertEquals(listOf("anime"),StreamsUiState(groups=groups,selectedFilter="category:anime").filteredGroups.map{it.addonId})
+ }
+
     @Test
     fun categoriesUseCapabilitiesAndPreserveMergedProviderMembership() {
         val groups = listOf(

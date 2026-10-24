@@ -6,7 +6,6 @@ const timeLabel = document.getElementById("timeLabel");
 const volumeControl = document.getElementById("volumeControl");
 const volumeButton = document.getElementById("volumeButton");
 const volumeIcon = document.getElementById("volumeIcon");
-const volumeSlider = document.getElementById("volumeSlider");
 const bufferingStatus = document.getElementById("bufferingStatus");
 const playbackError = document.getElementById("playbackError");
 const playbackErrorTitle = document.getElementById("playbackErrorTitle");
@@ -31,8 +30,6 @@ const fullscreenIcon = document.getElementById("fullscreenIcon");
 const title = document.getElementById("title");
 const episode = document.getElementById("episode");
 const playbackMetadata = document.querySelector(".metadata");
-const streamTitle = document.getElementById("streamTitle");
-const providerName = document.getElementById("providerName");
 const resizeLabel = document.getElementById("resizeLabel");
 const speedLabel = document.getElementById("speedLabel");
 const subtitlesLabel = document.getElementById("subtitlesLabel");
@@ -530,7 +527,6 @@ const settingToastLabel = command => {
 };
 
 const maxVolumeLevel = 2;
-const standardMaxVolumeLevel = 1;
 const volumeStepLevel = 0.05;
 
 const clampVolumeLevel = level => Math.max(0, Math.min(maxVolumeLevel, level));
@@ -539,33 +535,27 @@ const volumeToastLabel = (fallbackDelta = 0) => {
   const volumeLevel = state.volumeLevel;
   if (typeof volumeLevel === "number" && Number.isFinite(volumeLevel)) {
     const percent = Math.round(clampVolumeLevel(volumeLevel) * 100);
-    const mutedStr = state.mutedLabel || "";
-    const volumeFormat = state.volumeLevelLabelFormat || "";
+    const mutedStr = state.mutedLabel || "Muted";
+    const volumeFormat = state.volumeLevelLabelFormat || "Volume %s";
     return percent === 0 ? mutedStr : volumeFormat.replace("%s", `${percent}%`).replace("%1$s", `${percent}%`);
   }
   return "";
 };
 
 const syncVolumeControl = () => {
-  if (!volumeControl || !volumeSlider || !volumeIcon) return;
+  if (!volumeControl || !volumeIcon) return;
   const volumeLevel = state.volumeLevel;
   const hasLevel = typeof volumeLevel === "number" && Number.isFinite(volumeLevel);
   const clampedLevel = hasLevel ? clampVolumeLevel(volumeLevel) : 1;
   const percent = Math.round(clampedLevel * 100);
-  const sliderPosition = Math.round((clampedLevel / maxVolumeLevel) * 100);
-  const mutedStr = state.mutedLabel || "";
-  const volumeFormat = state.volumeLevelLabelFormat || "";
+  const mutedStr = state.mutedLabel || "Muted";
+  const volumeFormat = state.volumeLevelLabelFormat || "Volume %s";
   const label = percent === 0 ? mutedStr : volumeFormat.replace("%s", `${percent}%`).replace("%1$s", `${percent}%`);
-  volumeControl.style.setProperty("--volume-position", `${sliderPosition}%`);
-  volumeSlider.value = String(percent);
-  volumeSlider.setAttribute("aria-label", label);
-  volumeSlider.setAttribute("aria-valuetext", percent > 100 ? `${percent}%, boosted` : `${percent}%`);
-  volumeSlider.setAttribute("title", label);
   volumeIcon.setAttribute("href", percent === 0 ? "#icon-volume-muted" : "#icon-volume");
   if (volumeButton) {
     const btnLabel = percent === 0 ? "Unmute" : "Mute";
     volumeButton.setAttribute("aria-label", btnLabel);
-    volumeButton.setAttribute("title", btnLabel);
+    volumeButton.setAttribute("title", `${btnLabel} · ${label}. Use ↑/↓ or the scroll wheel to adjust.`);
   }
 };
 
@@ -777,7 +767,7 @@ const setProgress = (positionMs, durationMs, bufferedMs = state.bufferedPosition
   positionLabel.textContent = formatTime(positionMs);
   durationLabel.textContent = formatTime(durationMs);
   if (timeLabel) {
-    timeLabel.textContent = `${formatTime(positionMs)} / ${formatTime(durationMs)}`;
+    timeLabel.textContent = formatTime(Math.max(0, durationMs - positionMs));
   }
   syncVolumeControl();
 };
@@ -872,7 +862,7 @@ const renderPauseMetadataOverlay = showOpening => {
 
   const logoUrl = setImageSource(pauseLogo, state.pauseOverlayLogo);
   const titleText = String(state.title || "").trim();
-  const episodeInfo = String(state.pauseOverlayEpisodeInfo || state.providerName || "").trim();
+  const episodeInfo = String(state.pauseOverlayEpisodeInfo || "").trim();
   const episodeTitleText = String(state.pauseOverlayEpisodeTitle || "").trim();
   const descriptionText = String(state.pauseOverlayDescription || "").trim();
   const showOverlay = Boolean(
@@ -970,6 +960,7 @@ const closePlayerModal = (notifyDismiss = false, animated = true) => {
 };
 
 const openPlayerModal = modal => {
+  if (modal === "audio") modal = "subtitles";
   const targetModal = modalByName[modal];
   if (!targetModal) {
     closePlayerModal(false);
@@ -1063,7 +1054,7 @@ const renderSpeedOptionList = () => {
 };
 
 const renderAudioTrackList = () => {
-  audioPanelTitle.textContent = state.audioTracksPanelTitle || "Audio Tracks";
+  audioPanelTitle.textContent = state.audioLabel || "Audio";
   audioTrackList.textContent = "";
   const tracks = normalizeTracks(state.audioTracks);
   if (tracks.length === 0) {
@@ -1077,7 +1068,6 @@ const renderAudioTrackList = () => {
     row.addEventListener("click", event => {
       event.stopPropagation();
       send("selectAudioTrack", trackIdValue(track));
-      window.setTimeout(closePlayerModal, 120);
     });
     const copy = document.createElement("span");
     copy.className = "audio-track-copy";
@@ -1185,6 +1175,7 @@ const appendSubtitleOptionRow = option => {
   row.className = `track-row subtitle-option-row${selected ? " selected" : ""}`;
   row.addEventListener("click", event => {
     event.stopPropagation();
+    activeSubtitleLanguageKey = option.languageKey;
     pendingSubtitleOptionId = option.id;
     if (option.kind === "builtIn") send("selectBuiltInSubtitleTrack", option.index);
     else send("selectAddonSubtitle", option.index);
@@ -1244,18 +1235,25 @@ const renderSubtitleSelectionRails = () => {
   subtitleTrackList.textContent = "";
   languages.forEach(appendSubtitleLanguageRow);
   addonSubtitleList.textContent = "";
-  const activeOptions = options.filter(option => option.languageKey === activeSubtitleLanguageKey);
-  if (activeSubtitleLanguageKey === "__off__") {
-    appendSubtitleOptionsEmptyState(state.noneLabel || "None");
-  } else if (activeOptions.length > 0) {
-    activeOptions.forEach(appendSubtitleOptionRow);
-  } else if (state.isLoadingAddonSubtitles) {
-    appendSubtitleOptionsEmptyState("Loading subtitles...");
-  } else {
-    appendSubtitleOptionsEmptyState(state.fetchSubtitlesLabel || "Tap to fetch subtitles", true);
-  }
-  const styleVisible = activeSubtitleLanguageKey !== "__off__" && activeOptions.some(option =>
-    option.id === pendingSubtitleOptionId || (!pendingSubtitleOptionId && option.selected));
+  const off = document.createElement("button");
+  off.type = "button";
+  off.className = "track-row" + (activeSubtitleLanguageKey === "__off__" ? " selected" : "");
+  off.textContent = state.noneLabel || "Off";
+  off.appendChild(buildCheckIcon());
+  off.addEventListener("click", event => {
+    event.stopPropagation();
+    activeSubtitleLanguageKey = "__off__";
+    pendingSubtitleOptionId = "";
+    send("selectBuiltInSubtitleTrack", -1);
+    renderSubtitleModal();
+  });
+  addonSubtitleList.appendChild(off);
+  options.forEach(appendSubtitleOptionRow);
+  if (options.length === 0) appendSubtitleOptionsEmptyState(
+    state.isLoadingAddonSubtitles ? "Loading subtitles..." : (state.fetchSubtitlesLabel || "Fetch subtitles"),
+    !state.isLoadingAddonSubtitles,
+  );
+  const styleVisible = subtitleModal.classList.contains("show-track-settings");
   subtitleStyleRail.hidden = !styleVisible;
   subtitleStyleRail.parentElement.classList.toggle("style-visible", styleVisible);
   if (styleVisible) renderSubtitleStylePanel();
@@ -1385,7 +1383,8 @@ const renderSubtitleStylePanel = () => {
 };
 
 const renderSubtitleModal = () => {
-  subtitlePanelTitle.textContent = state.subtitlesPanelTitle || "Subtitles";
+  subtitlePanelTitle.textContent = `${state.audioLabel || "Audio"} & ${state.subtitlesPanelTitle || "Subtitles"}`;
+  renderAudioTrackList();
   subtitleLanguageRailTitle.textContent = state.subtitleLanguagesLabel || "Languages";
   subtitleOptionsRailTitle.textContent = state.subtitlesPanelTitle || "Subtitles";
   subtitleStyleRailTitle.textContent = state.subtitleStyleTabLabel || "Style";
@@ -2064,7 +2063,9 @@ const renderNativePlaybackPrompts = () => {
   }
   skipPromptWasDismissed = Boolean(state.skipPromptDismissed);
 
-  const shouldShowSkip = Boolean(state.skipPromptVisible && (!state.skipPromptDismissed || state.controlsVisible));
+  // A manually skipped segment stays dismissed even when the playback chrome
+  // is shown again. The segment key above resets this for the next interval.
+  const shouldShowSkip = Boolean(state.skipPromptVisible && !state.skipPromptDismissed);
   const showSkip = Boolean(shouldShowSkip && (!skipPromptAutoHidden || state.controlsVisible));
   const showSkipProgress = Boolean(showSkip && !state.controlsVisible && !skipPromptAutoHidden && !state.skipPromptDismissed);
   skipPromptLabel.textContent = state.skipPromptLabel || "Skip";
@@ -2238,7 +2239,6 @@ const renderChrome = () => {
   root.classList.toggle("pip-mode", Boolean(state.isInPip));
   if (!state.isInPip && isPipLocked) setPipLocked(false);
   root.classList.toggle("chrome-hidden", Boolean(showError || !state.controlsVisible));
-  root.classList.toggle("source-visible", Boolean(!showError && !isPlaying && !state.isLoading && (state.streamTitle || state.providerName)));
   syncHiddenCursor();
   const showOpening = renderOpeningOverlay(showError);
   renderPauseMetadataOverlay(showOpening || showError);
@@ -2246,8 +2246,6 @@ const renderChrome = () => {
 
   title.textContent = state.title || "";
   setText(episode, state.episodeText);
-  setText(streamTitle, state.streamTitle);
-  setText(providerName, state.providerName);
   resizeLabel.textContent = state.resizeModeLabel || "Fit";
   speedLabel.textContent = state.playbackSpeedLabel || "1x";
   subtitlesLabel.textContent = state.subtitlesLabel || "Subs";
@@ -2256,7 +2254,7 @@ const renderChrome = () => {
   episodesLabel.textContent = state.episodesLabel || "Episodes";
   setActionButtonLabel("resize", state.resizeModeLabel || "Fit");
   setActionButtonLabel("speed", state.playbackSpeedLabel || "1x");
-  setActionButtonLabel("subtitles", state.subtitlesLabel || "Subs");
+  setActionButtonLabel("subtitles", `${state.audioLabel || "Audio"} & ${state.subtitlesPanelTitle || "Subtitles"}`);
   setActionButtonLabel("audio", state.audioLabel || "Audio");
   setActionButtonLabel("sources", state.sourcesLabel || "Quality");
   setActionButtonLabel("episodes", state.episodesLabel || "Episodes");
@@ -2497,14 +2495,8 @@ const sendKeyboardVolume = delta => {
   const currentLevel = typeof state.volumeLevel === "number" && Number.isFinite(state.volumeLevel)
     ? state.volumeLevel
     : 1;
-  if (delta > 0 && currentLevel >= standardMaxVolumeLevel) {
-    showPlayerToast(volumeToastLabel(delta));
-    return;
-  }
   const adjustedLevel = currentLevel + (delta * volumeStepLevel);
-  const nextLevel = delta > 0
-    ? Math.min(standardMaxVolumeLevel, clampVolumeLevel(adjustedLevel))
-    : clampVolumeLevel(adjustedLevel);
+  const nextLevel = clampVolumeLevel(adjustedLevel);
   state.volumeLevel = nextLevel;
   if (nextLevel > 0) {
     preMuteVolumeLevel = nextLevel;
@@ -2935,20 +2927,6 @@ seek.addEventListener("change", () => {
   render();
 });
 
-volumeSlider.addEventListener("input", event => {
-  if (event && !event.isTrusted) return;
-  noteChromeActivity();
-  const percent = Math.max(0, Math.min(maxVolumeLevel * 100, Number(volumeSlider.value) || 0));
-  const nextLevel = percent / 100;
-  state.volumeLevel = nextLevel;
-  if (nextLevel > 0) {
-    preMuteVolumeLevel = nextLevel;
-  }
-  syncVolumeControl();
-  showPlayerToast(volumeToastLabel());
-  send("volumeChange", nextLevel);
-});
-
 let preMuteVolumeLevel = 1.0;
 
 volumeButton.addEventListener("click", () => {
@@ -3007,7 +2985,7 @@ window.playerUpdate = update => {
     }
   }
   renderChrome();
-  if ((audioTracksChanged && activeModal === "audio") ||
+  if ((audioTracksChanged && (activeModal === "audio" || activeModal === "subtitles")) ||
       (subtitleTracksChanged && activeModal === "subtitles")) {
     renderActiveModal();
   }
@@ -3088,13 +3066,13 @@ const isControlsSurfaceEvent = event => {
   }
 
   const titleEl = document.getElementById("title");
-  const metaRow = document.querySelector(".meta-row");
-  if (titleEl && metaRow) {
+  const episodeEl = document.getElementById("episode");
+  if (titleEl) {
     const titleRect = titleEl.getBoundingClientRect();
-    const metaRect = metaRow.getBoundingClientRect();
-    const textTop = Math.min(titleRect.top, metaRect.top);
-    const textBottom = Math.max(titleRect.bottom, metaRect.bottom);
-    const textRight = titleRect.left + Math.max(titleEl.scrollWidth, metaRow.scrollWidth) + 16;
+    const episodeRect = episodeEl && !episodeEl.hidden ? episodeEl.getBoundingClientRect() : titleRect;
+    const textTop = Math.min(titleRect.top, episodeRect.top);
+    const textBottom = Math.max(titleRect.bottom, episodeRect.bottom);
+    const textRight = titleRect.left + Math.max(titleEl.scrollWidth, episodeEl && !episodeEl.hidden ? episodeEl.scrollWidth : 0) + 16;
 
     if (
         event.clientX >= titleRect.left &&
@@ -3694,3 +3672,5 @@ setProgress(0, 0);
 focusShortcutRoot();
 render();
 send("controlsReady", 0);
+
+ document.getElementById("trackSettingsButton").addEventListener("click", event => { event.stopPropagation(); subtitleModal.classList.toggle("show-track-settings"); renderSubtitleModal(); });

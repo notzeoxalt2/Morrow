@@ -253,8 +253,10 @@ actual object LocalStreamProxy {
             (code in 200..299 && !method.equals("HEAD", ignoreCase = true) &&
                 upstreamResp.peekBody(64).string().removePrefix("\uFEFF").trimStart().startsWith("#EXTM3U"))
 
+        // Some relays label PNG-wrapped TS as video/mp2t or octet-stream.
+        // Inspect the signature; the decoder also requires aligned TS packets after IEND.
         val segmentOffset = if (!isM3u8 && code in 200..299 && !method.equals("HEAD", ignoreCase = true) &&
-            contentType.startsWith("image/", ignoreCase = true)) {
+            upstreamResp.peekBody(8).bytes().contentEquals(byteArrayOf(0x89.toByte(),0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a))) {
             pngWrappedTransportStreamOffset(upstreamResp.peekBody(64L * 1024).bytes())
         } else null
         val out = socket.getOutputStream()

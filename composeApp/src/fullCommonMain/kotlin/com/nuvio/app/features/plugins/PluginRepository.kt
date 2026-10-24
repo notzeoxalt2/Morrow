@@ -381,12 +381,16 @@ actual object PluginRepository {
         mediaType: String,
         season: Int?,
         episode: Int?,
+        animeEpisodeNumber: Int?,
+        animeTitle: String?,
     ): Result<List<PluginRuntimeResult>> = executeScraperInternal(
         scraper = scraper,
         tmdbId = tmdbId,
         mediaType = mediaType,
         season = season,
         episode = episode,
+        animeEpisodeNumber = animeEpisodeNumber,
+        animeTitle = animeTitle,
         respectSearchPause = true,
     )
 
@@ -396,6 +400,8 @@ actual object PluginRepository {
         mediaType: String,
         season: Int?,
         episode: Int?,
+        animeEpisodeNumber: Int? = null,
+        animeTitle: String? = null,
         respectSearchPause: Boolean,
     ): Result<List<PluginRuntimeResult>> {
         val effectiveMediaType = if (mediaType.equals("anime", ignoreCase = true)) {
@@ -410,8 +416,11 @@ actual object PluginRepository {
         val callContext = buildMap<String, String> {
             put("originalId", tmdbId)
             animeMapping?.mappings?.anilist_id?.let { put("anilistId", it.toString()) }
-            if (animeMapping != null && episode != null) put("animeEpisode", episode.toString())
-            animeMapping?.titles?.get("en")?.let { put("animeTitle", it) }
+            if (mediaType.equals("anime", ignoreCase = true)) {
+                (animeEpisodeNumber ?: episode)?.let { put("animeEpisode", it.toString()) }
+            }
+            (animeTitle?.takeIf(String::isNotBlank) ?: animeMapping?.titles?.get("en"))
+                ?.let { put("animeTitle", it) }
         }
 
         val resolvedTmdbId = resolvePluginTmdbId(
@@ -456,7 +465,7 @@ actual object PluginRepository {
     ): Pair<PluginRepositoryItem, List<PluginScraper>> {
         val storageProfileId = currentProfileId
         return withContext(Dispatchers.Default) {
-            val payload = httpGetText(manifestUrl)
+            val payload = bundledPluginPreviewText(manifestUrl) ?: httpGetText(manifestUrl)
             val manifest = PluginManifestParser.parse(payload)
             val baseUrl = manifestUrl.substringBefore("?").removeSuffix("/manifest.json")
 
@@ -479,7 +488,7 @@ actual object PluginRepository {
                                     }
                                 }
                                 runCatching {
-                                    val code = httpGetText(codeUrl)
+                                    val code = bundledPluginPreviewText(codeUrl) ?: httpGetText(codeUrl)
                                     val scraperId = "${manifestUrl.lowercase()}:${info.id}"
                                     val cached = PluginStorage.saveScraperCode(
                                         profileId = storageProfileId,
@@ -554,7 +563,8 @@ actual object PluginRepository {
         repository: PluginRepositoryItem,
         scrapers: List<PluginScraper>,
         nowEpochMs: Long,
-    ): Boolean = isPluginRepositoryRefreshDue(repository.lastUpdated, nowEpochMs) ||
+    ): Boolean = bundledPluginPreviewText(repository.manifestUrl) != null ||
+        isPluginRepositoryRefreshDue(repository.lastUpdated, nowEpochMs) ||
         scrapers.count { scraper -> scraper.repositoryUrl == repository.manifestUrl } < repository.scraperCount
 
     private fun markRefreshing(manifestUrl: String) {

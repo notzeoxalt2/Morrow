@@ -39,5 +39,7 @@ expect object PluginRepository {
         mediaType: String,
         season: Int?,
         episode: Int?,
+        animeEpisodeNumber: Int? = null,
+        animeTitle: String? = null,
     ): Result<List<PluginRuntimeResult>>
 }

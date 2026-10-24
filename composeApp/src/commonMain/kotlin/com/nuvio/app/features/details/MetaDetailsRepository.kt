@@ -380,13 +380,16 @@ object MetaDetailsRepository {
         settings: com.nuvio.app.features.mdblist.MdbListSettings,
         settingsFingerprint: String,
     ): MetaDetails {
+        val photoMeta = withTimeoutOrNull(3_000L) {
+            TmdbMetadataService.enrichCastPhotos(meta, fallbackItemId)
+        } ?: meta
         val mdbListEnrichedMeta = withTimeoutOrNull(MDBLIST_ENRICH_TIMEOUT_MS) {
             MdbListMetadataService.enrichMeta(
-                meta = meta,
+                meta = photoMeta,
                 fallbackItemId = fallbackItemId,
                 settings = settings,
             )
-        } ?: meta
+        } ?: photoMeta
         val enrichedMeta = applyMoreLikeThisSource(
             meta = mdbListEnrichedMeta,
             fallbackItemId = fallbackItemId,
@@ -465,6 +468,7 @@ object MetaDetailsRepository {
         fallbackItemId: String,
         settings: com.nuvio.app.features.mdblist.MdbListSettings,
     ): Boolean {
+        if (meta.cast.any { it.photo.isNullOrBlank() }) return true
         if (shouldFetchMdbListOnMetaScreen(meta, fallbackItemId, settings)) return true
         return shouldApplyMoreLikeThisSource(meta)
     }

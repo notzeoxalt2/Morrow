@@ -37,8 +37,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +57,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -80,7 +84,11 @@ import com.nuvio.app.features.details.SeasonViewMode
 import com.nuvio.app.features.details.SeasonViewModeStorage
 import com.nuvio.app.features.details.formatRuntimeFromMinutes
 import com.nuvio.app.features.details.groupedEpisodesForDisplay
+import com.nuvio.app.features.details.absoluteEpisodeNumber
 import com.nuvio.app.features.details.preferredEpisodeNumberForSeason
+import com.nuvio.app.features.details.prefersFlatEpisodeCatalog
+import com.nuvio.app.features.details.episodeWindowStart
+import com.nuvio.app.features.details.sortedPlayableEpisodes
 import com.nuvio.app.features.details.seasonSortKey
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
@@ -163,6 +171,10 @@ fun DetailSeriesContent(
     }
 
     val seasons = groupedEpisodes.keys.sortedBy(::seasonSortKey)
+    val allEpisodes = remember(meta.videos) { meta.sortedPlayableEpisodes() }
+    var showFlatEpisodeList by rememberSaveable(meta.id) {
+        mutableStateOf(meta.prefersFlatEpisodeCatalog())
+    }
     val defaultSeason = preferredSeasonNumber
         ?.takeIf { it in groupedEpisodes }
         ?: seasons.first()
@@ -187,9 +199,27 @@ fun DetailSeriesContent(
                 horizontalScrollPadding = horizontalScrollPadding,
                 onSelect = { selectedSeasonOverride = it },
                 onLongPress = onSeasonLongPress,
+                showFlatEpisodeList = showFlatEpisodeList,
+                onToggleFlatEpisodeList = { showFlatEpisodeList = !showFlatEpisodeList },
             )
 
-            AnimatedContent(
+            if (showFlatEpisodeList) {
+                FlatEpisodeCatalog(
+                    meta = meta,
+                    episodes = allEpisodes,
+                    maxWidthDp = containerWidthDp,
+                    horizontalScrollPadding = horizontalScrollPadding,
+                    preferredSeasonNumber = preferredSeasonNumber,
+                    preferredEpisodeNumber = preferredEpisodeNumber,
+                    episodeCardStyle = episodeCardStyle,
+                    progressByVideoId = progressByVideoId,
+                    watchedKeys = watchedKeys,
+                    episodeRatings = episodeRatings,
+                    blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+                    onEpisodeClick = onEpisodeClick,
+                    onEpisodeLongPress = onEpisodeLongPress,
+                )
+            } else AnimatedContent(
                 targetState = currentSeason,
                 transitionSpec = {
                     val fromIdx = seasons.indexOf(initialState).takeIf { it >= 0 } ?: 0
@@ -215,7 +245,43 @@ fun DetailSeriesContent(
                         )
                     }
                     val seasonEpisodes = groupedEpisodes.getValue(seasonForContent)
-                    if (episodeCardStyle == MetaEpisodeCardStyle.Horizontal) {
+                    var compactEpisodes by rememberSaveable(meta.id, seasonForContent) {
+                        mutableStateOf(seasonEpisodes.size > 24)
+                    }
+                    var episodeStartIndex by rememberSaveable(meta.id, seasonForContent) {
+                        val preferredEpisode = preferredEpisodeNumberForSeason(
+                            displayedSeasonNumber = seasonForContent,
+                            preferredSeasonNumber = preferredSeasonNumber,
+                            preferredEpisodeNumber = preferredEpisodeNumber,
+                        )
+                        val preferredIndex = seasonEpisodes.indexOfFirst { it.episode == preferredEpisode }
+                        mutableStateOf(
+                            episodeWindowStart(
+                                requestedEpisodeNumber = preferredIndex.takeIf { it >= 0 }?.plus(1),
+                                episodeCount = seasonEpisodes.size,
+                                pageSize = 100,
+                            ),
+                        )
+                    }
+                    if (seasonEpisodes.size > 24) {
+                        LongEpisodeControls(
+                            compact = compactEpisodes,
+                            episodes = seasonEpisodes.size,
+                            startIndex = episodeStartIndex,
+                            pageSize = 100,
+                            onToggleCompact = { compactEpisodes = !compactEpisodes },
+                            onStartIndexChange = { episodeStartIndex = it },
+                        )
+                    }
+                    if (compactEpisodes && seasonEpisodes.size > 24) {
+                        seasonEpisodes.drop(episodeStartIndex).take(100).forEach { episode ->
+                            CompactEpisodeRow(
+                                video = episode,
+                                absoluteNumber = meta.absoluteEpisodeNumber(episode.season, episode.episode),
+                                onClick = { onEpisodeClick?.invoke(episode) },
+                            )
+                        }
+                    } else if (episodeCardStyle == MetaEpisodeCardStyle.Horizontal) {
                         EpisodeHorizontalRow(
                             episodes = seasonEpisodes,
                             maxWidthDp = containerWidthDp,
@@ -269,6 +335,219 @@ fun DetailSeriesContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FlatEpisodeCatalog(
+    meta: MetaDetails,
+    episodes: List<MetaVideo>,
+    maxWidthDp: Float,
+    horizontalScrollPadding: Dp,
+    preferredSeasonNumber: Int?,
+    preferredEpisodeNumber: Int?,
+    episodeCardStyle: MetaEpisodeCardStyle,
+    progressByVideoId: Map<String, WatchProgressEntry>,
+    watchedKeys: Set<String>,
+    episodeRatings: Map<Pair<Int, Int>, Double>,
+    blurUnwatchedEpisodes: Boolean,
+    onEpisodeClick: ((MetaVideo) -> Unit)?,
+    onEpisodeLongPress: ((MetaVideo) -> Unit)?,
+) {
+    val pageSize = 100
+    val preferredIndex = episodes.indexOfFirst {
+        it.season == preferredSeasonNumber && it.episode == preferredEpisodeNumber
+    }
+    var startIndex by rememberSaveable(meta.id, "flat_episode_start") {
+        mutableStateOf(
+            episodeWindowStart(
+                requestedEpisodeNumber = preferredIndex.takeIf { it >= 0 }?.plus(1),
+                episodeCount = episodes.size,
+                pageSize = pageSize,
+            ),
+        )
+    }
+    var compactEpisodes by rememberSaveable(meta.id, "flat_episode_compact") {
+        mutableStateOf(episodes.size > 24)
+    }
+    val visibleEpisodes = episodes.drop(startIndex).take(pageSize)
+    val sizing = seriesContentSizing(maxWidthDp)
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (episodes.size > 24) {
+            LongEpisodeControls(
+                compact = compactEpisodes,
+                episodes = episodes.size,
+                startIndex = startIndex,
+                pageSize = pageSize,
+                onToggleCompact = { compactEpisodes = !compactEpisodes },
+                onStartIndexChange = { startIndex = it },
+            )
+        }
+        if (compactEpisodes) {
+            visibleEpisodes.forEach { episode ->
+                CompactEpisodeRow(
+                    video = episode,
+                    absoluteNumber = meta.absoluteEpisodeNumber(episode.season, episode.episode),
+                    onClick = { onEpisodeClick?.invoke(episode) },
+                )
+            }
+        } else if (episodeCardStyle == MetaEpisodeCardStyle.Horizontal) {
+            EpisodeHorizontalRow(
+                episodes = visibleEpisodes,
+                maxWidthDp = maxWidthDp,
+                horizontalScrollPadding = horizontalScrollPadding,
+                parentMetaId = meta.id,
+                metaType = meta.type,
+                watchedKeys = watchedKeys,
+                fallbackImage = meta.background ?: meta.poster,
+                progressByVideoId = progressByVideoId,
+                episodeRatings = episodeRatings,
+                blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+                onEpisodeClick = onEpisodeClick,
+                onEpisodeLongPress = onEpisodeLongPress,
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(sizing.cardGap)) {
+                visibleEpisodes.forEach { episode ->
+                    val episodeVideoId = buildPlaybackVideoId(
+                        parentMetaId = meta.id,
+                        seasonNumber = episode.season,
+                        episodeNumber = episode.episode,
+                        fallbackVideoId = episode.id,
+                    )
+                    EpisodeListCard(
+                        video = episode,
+                        fallbackImage = meta.background ?: meta.poster,
+                        progressEntry = progressByVideoId[episodeVideoId],
+                        imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] } ?: episode.rating,
+                        isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
+                            WatchingState.isEpisodeWatched(
+                                watchedKeys = watchedKeys,
+                                metaType = meta.type,
+                                metaId = meta.id,
+                                episode = episode,
+                            ),
+                        blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+                        sizing = sizing,
+                        onClick = { onEpisodeClick?.invoke(episode) },
+                        onLongPress = { onEpisodeLongPress?.invoke(episode) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LongEpisodeControls(
+    compact: Boolean,
+    episodes: Int,
+    startIndex: Int,
+    pageSize: Int,
+    onToggleCompact: () -> Unit,
+    onStartIndexChange: (Int) -> Unit,
+) {
+    val first = startIndex + 1
+    val last = minOf(episodes, startIndex + pageSize)
+    var jumpNumber by rememberSaveable(episodes) { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Episodes $first–$last of $episodes",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Text(
+                text = if (compact) "Show thumbnails" else "Hide thumbnails",
+                color = MaterialTheme.colorScheme.onBackground,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.clickable(onClick = onToggleCompact),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (episodes > pageSize) {
+                val canGoBack = startIndex > 0
+                val canGoForward = startIndex + pageSize < episodes
+                Text(
+                    text = "‹",
+                    color = if (canGoBack) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.clickable(enabled = canGoBack) {
+                        onStartIndexChange((startIndex - pageSize).coerceAtLeast(0))
+                    },
+                )
+                Text(
+                    text = "›",
+                    color = if (canGoForward) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.clickable(enabled = canGoForward) {
+                        onStartIndexChange((startIndex + pageSize).coerceAtMost(episodes - 1))
+                    },
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            OutlinedTextField(
+                value = jumpNumber,
+                onValueChange = { value -> jumpNumber = value.filter(Char::isDigit).take(6) },
+                modifier = Modifier.width(108.dp).height(48.dp),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+                placeholder = { Text("Episode #", style = MaterialTheme.typography.labelSmall) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            )
+            TextButton(
+                onClick = {
+                    jumpNumber.toIntOrNull()?.let { number ->
+                        onStartIndexChange(episodeWindowStart(number, episodes, pageSize))
+                    }
+                },
+                enabled = jumpNumber.isNotBlank(),
+            ) { Text("Go") }
+        }
+    }
+}
+
+@Composable
+private fun CompactEpisodeRow(
+    video: MetaVideo,
+    absoluteNumber: Int?,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            val episodeCode = localizedSeasonEpisodeCode(video.season, video.episode)
+            Text(
+                text = listOfNotNull(absoluteNumber?.let { "Episode $it" }, episodeCode).joinToString("  •  "),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = video.title,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text("▶", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -359,8 +638,10 @@ private fun SeriesSeasonSelector(
     horizontalScrollPadding: Dp,
     onSelect: (Int) -> Unit,
     onLongPress: ((Int) -> Unit)?,
+    showFlatEpisodeList: Boolean = false,
+    onToggleFlatEpisodeList: () -> Unit = {},
 ) {
-    if (seasons.size <= 1) return
+    if (seasons.size <= 1 && !showFlatEpisodeList) return
 
     var seasonViewMode by remember {
         mutableStateOf(SeasonViewModeStorage.load() ?: SeasonViewMode.Posters)
@@ -386,14 +667,23 @@ private fun SeriesSeasonSelector(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = stringResource(Res.string.details_seasons),
+                text = stringResource(
+                    if (showFlatEpisodeList) Res.string.settings_meta_episodes else Res.string.details_seasons,
+                ),
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontSize = sizing.seasonHeaderSize,
                     fontWeight = FontWeight.SemiBold,
                 ),
                 color = MaterialTheme.colorScheme.onBackground,
             )
-            if (hasSeasonPosters) {
+            if (seasons.size > 1) {
+                EpisodeBrowseModeToggle(
+                    showFlatEpisodeList = showFlatEpisodeList,
+                    sizing = sizing,
+                    onClick = onToggleFlatEpisodeList,
+                )
+            }
+            if (!showFlatEpisodeList && hasSeasonPosters) {
                 SeasonViewModeToggle(
                     mode = seasonViewMode,
                     sizing = sizing,
@@ -406,7 +696,7 @@ private fun SeriesSeasonSelector(
             }
         }
 
-        if (hasSeasonPosters) {
+        if (!showFlatEpisodeList && hasSeasonPosters && seasons.size > 1) {
             Crossfade(
                 targetState = seasonViewMode,
                 animationSpec = tween(280),
@@ -433,7 +723,7 @@ private fun SeriesSeasonSelector(
                     )
                 }
             }
-        } else {
+        } else if (!showFlatEpisodeList && seasons.size > 1) {
             SeasonTextChipScrollRow(
                 seasons = seasons,
                 currentSeason = currentSeason,
@@ -443,6 +733,36 @@ private fun SeriesSeasonSelector(
                 onLongPress = onLongPress,
             )
         }
+    }
+}
+
+@Composable
+private fun EpisodeBrowseModeToggle(
+    showFlatEpisodeList: Boolean,
+    sizing: SeriesContentSizing,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.2f),
+                shape = RoundedCornerShape(8.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (showFlatEpisodeList) "By season" else "All episodes",
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontSize = sizing.seasonToggleTextSize,
+                fontWeight = FontWeight.SemiBold,
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

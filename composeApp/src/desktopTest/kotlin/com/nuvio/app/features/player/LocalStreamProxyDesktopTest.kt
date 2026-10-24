@@ -16,18 +16,24 @@ class LocalStreamProxyDesktopTest {
         val ts = ByteArray(188 * 4).also { for (i in 0..3) it[i*188] = 0x47 }
         upstream.createContext("/") { exchange ->
             val payload = png + ts
-            exchange.responseHeaders.add("Content-Type", "image/png")
+            exchange.responseHeaders.add("Content-Type", when {
+                exchange.requestURI.path.endsWith(".ts") -> "video/mp2t"
+                exchange.requestURI.path.endsWith(".bin") -> "application/octet-stream"
+                else -> "image/png"
+            })
             exchange.sendResponseHeaders(200, payload.size.toLong())
             exchange.responseBody.use { it.write(payload) }
             exchange.close()
         }
         upstream.start()
         try {
-            val connection = URI(LocalStreamProxy.wrapUrl("http://127.0.0.1:${upstream.address.port}/segment.png", mapOf("Referer" to "https://required.test/"))).toURL().openConnection()
-            val bytes = connection.getInputStream().use { it.readBytes() }
-            assertEquals("video/mp2t", connection.contentType)
-            assertEquals(ts.size.toLong(), connection.contentLengthLong)
-            assertTrue(bytes.contentEquals(ts))
+            for (extension in listOf("png", "ts", "bin")) {
+                val connection = URI(LocalStreamProxy.wrapUrl("http://127.0.0.1:${upstream.address.port}/segment.$extension", mapOf("Referer" to "https://required.test/"))).toURL().openConnection()
+                val bytes = connection.getInputStream().use { it.readBytes() }
+                assertEquals("video/mp2t", connection.contentType)
+                assertEquals(ts.size.toLong(), connection.contentLengthLong)
+                assertTrue(bytes.contentEquals(ts))
+            }
         } finally { upstream.stop(0) }
     }
     @Test fun extensionlessPlaylistWithImageMimeKeepsSegmentHeaders() {

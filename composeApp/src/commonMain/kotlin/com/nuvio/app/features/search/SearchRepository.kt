@@ -19,6 +19,7 @@ import com.nuvio.app.features.catalog.supportsPagination
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.catalogDisplayName
 import com.nuvio.app.features.home.filterReleasedItems
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import kotlinx.coroutines.CancellationException
@@ -410,7 +411,7 @@ object SearchRepository {
                     SearchCatalogRequest(
                         addon = addon,
                         catalogId = catalog.id,
-                        catalogName = catalog.name,
+                        catalogName = catalogDisplayName(catalog.name, catalog.type),
                         type = catalog.type,
                         query = query,
                         supportsPagination = catalog.supportsPagination(),
@@ -433,7 +434,7 @@ object SearchRepository {
                         manifestUrl = addon.manifestUrl,
                         type = catalog.type,
                         catalogId = catalog.id,
-                        catalogName = catalog.name,
+                        catalogName = catalogDisplayName(catalog.name, catalog.type),
                         genreOptions = genreExtra?.options.orEmpty(),
                         genreRequired = genreExtra?.isRequired == true,
                         supportsPagination = catalog.supportsPagination(),
@@ -450,7 +451,7 @@ object SearchRepository {
             search = query,
             forceRefresh = forceRefresh,
         ).withUnreleasedFilter()
-        val items = page.items
+        val items = rankSearchResults(page.items, query) { it.name }
         require(items.isNotEmpty()) {
             getString(Res.string.search_error_no_results_for_catalog, catalogName)
         }

@@ -11,9 +11,11 @@ import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.debrid.LocalDebridAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.absoluteEpisodeNumber
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
+import com.nuvio.app.features.plugins.isAnimeProvider
 import com.nuvio.app.features.plugins.normalizePluginType
 import com.nuvio.app.features.plugins.contentParentId
 import com.nuvio.app.features.plugins.pluginContentId
@@ -275,20 +277,12 @@ object StreamsRepository {
                  meta.country?.contains("Japan", ignoreCase = true) == true ||
                  meta.language?.equals("ja", ignoreCase = true) == true ||
                  meta.language?.contains("Japanese", ignoreCase = true) == true))
+        val absoluteAnimeEpisode = if (isAnime) meta?.absoluteEpisodeNumber(season, episode) else null
 
         val installedAddons = AddonRepository.uiState.value.addons.enabledAddons()
         val effectiveType = if (isAnime) "anime" else type
         val pluginScrapers = if (AppFeaturePolicy.pluginsEnabled) {
-            PluginRepository.getEnabledScrapersForType(effectiveType).filter { scraper ->
-                val isAnimeScraper = scraper.supportedTypes.any { normalizePluginType(it) == "anime" } ||
-                    scraper.repositoryUrl.contains("anime", ignoreCase = true) ||
-                    scraper.id.contains("anime", ignoreCase = true) ||
-                    scraper.name.contains("anime", ignoreCase = true) ||
-                    listOf("anikage", "animesalt", "hianime", "animepahe", "anidb", "anikototv", "aniwaves", "anitaku", "miruro", "reanime", "animeheaven", "kurage", "animedekho", "anime-nexus", "lunarx", "saltanime", "marin", "zoro", "yugen", "kickassanime", "allanime", "otaku").any {
-                        scraper.id.contains(it, ignoreCase = true) || scraper.name.contains(it, ignoreCase = true)
-                    }
-                if (isAnime) true else !isAnimeScraper
-            }
+            PluginRepository.getEnabledScrapersForType(effectiveType)
         } else {
             emptyList()
         }
@@ -598,9 +592,11 @@ object StreamsRepository {
                                     PluginRepository.executeScraper(
                                         scraper = scraper,
                                         tmdbId = targetContentId,
-                                        mediaType = if (isAnime) "anime" else type,
+                                        mediaType = if (isAnime && scraper.isAnimeProvider()) "anime" else normalizePluginType(type),
                                         season = season,
                                         episode = episode,
+                                        animeEpisodeNumber = absoluteAnimeEpisode.takeIf { isAnime && scraper.isAnimeProvider() },
+                                        animeTitle = meta?.name?.takeIf { isAnime && scraper.isAnimeProvider() },
                                     ).fold(
                                         onSuccess = { results ->
                                             StreamLoadCompletion.PluginScraper(

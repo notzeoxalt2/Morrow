@@ -304,7 +304,7 @@ data class StreamsUiState(
     val filteredGroups: List<AddonStreamGroup>
         get() = if (selectedFilter == null) groups
                 else if (selectedFilter.startsWith("category:"))
-                    groups.filter { selectedFilter.removePrefix("category:") in it.sourceCategories }
+                    groups.filter { it.matchesSourceCategory(selectedFilter.removePrefix("category:")) }
                 else if (selectedFilter.startsWith("provider-name:"))
                     groups.filter { "provider-name:" + providerDisplayName(it.addonName).lowercase() == selectedFilter }
                 else groups.filter { it.addonId == selectedFilter }

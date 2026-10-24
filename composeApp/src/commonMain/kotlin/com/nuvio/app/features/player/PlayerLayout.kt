@@ -99,17 +99,17 @@ internal data class PlayerLayoutMetrics(
                     titleSize = 18.dp.value.sp,
                     episodeInfoSize = 14.dp.value.sp,
                     metadataSize = 12.dp.value.sp,
-                    centerGap = 56.dp,
+                    centerGap = 64.dp,
                     centerLift = 10.dp,
                     sliderBottomOffset = 16.dp,
                     sliderTouchHeight = 22.dp,
                     sliderScaleY = 0.82f,
                     timeSize = 12.dp.value.sp,
                     headerIconSize = 20.dp,
-                    sideButtonPadding = 10.dp,
-                    sideIconSize = 26.dp,
-                    playButtonPadding = 13.dp,
-                    playIconSize = 34.dp,
+                    sideButtonPadding = 11.dp,
+                    sideIconSize = 30.dp,
+                    playButtonPadding = 14.dp,
+                    playIconSize = 40.dp,
                 )
             }
     }

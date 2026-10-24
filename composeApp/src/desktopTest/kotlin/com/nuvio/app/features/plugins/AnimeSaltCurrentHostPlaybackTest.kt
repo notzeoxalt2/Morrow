@@ -18,7 +18,7 @@ class AnimeSaltCurrentHostPlaybackTest {
             assertTrue(sources.isNotEmpty(),"$title S1E1 current MyStream returned no native stream")
             val source=sources.single { it.name?.contains("Multi-Audio") == true }
             assertTrue(source.title.contains(title)&&source.title.contains("S1 E1"))
-            for (language in listOf("eng","jpn")) {
+            for (language in listOf("eng","jpn","hin")) {
                 val url=com.nuvio.app.features.player.LocalStreamProxy.wrapUrl(source.url,source.headers)
                 val process=ProcessBuilder("python",requireNotNull(System.getenv("MORROW_NATIVE_AUDIO_DECODE_SCRIPT")),requireNotNull(System.getenv("MORROW_NATIVE_MPV_DLL")),url,language).start()
                 val finished=process.waitFor(45,TimeUnit.SECONDS)

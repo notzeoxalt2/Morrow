@@ -60,3 +60,10 @@ internal fun currentPluginPlatformTags(): Set<String> {
 }
 
 internal fun currentEpochMillis(): Long = System.currentTimeMillis()
+
+internal fun bundledPluginPreviewText(url: String): String? {
+    if (!DesktopStorage.isProviderPreview) return null
+    val path = bundledAnimePreviewPath(url) ?: return null
+    return PluginStorage.javaClass.classLoader.getResourceAsStream("morrow-provider-preview/$path")
+        ?.bufferedReader()?.use { it.readText() }
+}

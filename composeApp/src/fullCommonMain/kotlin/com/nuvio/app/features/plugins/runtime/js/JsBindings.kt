@@ -88,7 +88,8 @@ internal object JsBindings {
             var headers = __normalize_fetch_headers(options.headers);
             var body = options.body || '';
             var followRedirects = options.redirect !== 'manual';
-            var result = await __native_fetch(url, method, JSON.stringify(headers), body, followRedirects);
+            var timeoutMs = Math.max(1000, Math.min(20000, Number(options.timeoutMs) || 5000));
+            var result = await __native_fetch(url, method, JSON.stringify(headers), body, followRedirects, timeoutMs);
             var parsed = JSON.parse(result);
             return {
                 ok: parsed.ok,
@@ -234,6 +235,12 @@ internal object JsBindings {
             this.hash = data.hash;
             this.origin = data.protocol + '//' + data.host;
             this.searchParams = new URLSearchParams(data.search || '');
+            var self = this;
+            this.searchParams._onChange = function() {
+                var query = self.searchParams.toString();
+                self.search = query ? '?' + query : '';
+                self.href = self.href.replace(/[?#].*$/, '') + self.search + (self.hash || '');
+            };
         };
         URL.prototype.toString = function() { return this.href; };
 
@@ -256,10 +263,10 @@ internal object JsBindings {
             }).join('&');
         };
         URLSearchParams.prototype.get = function(key) { return this._params.hasOwnProperty(key) ? this._params[key] : null; };
-        URLSearchParams.prototype.set = function(key, value) { this._params[key] = String(value); };
-        URLSearchParams.prototype.append = function(key, value) { this._params[key] = String(value); };
+        URLSearchParams.prototype.set = function(key, value) { this._params[key] = String(value); if (this._onChange) this._onChange(); };
+        URLSearchParams.prototype.append = function(key, value) { this._params[key] = String(value); if (this._onChange) this._onChange(); };
         URLSearchParams.prototype.has = function(key) { return this._params.hasOwnProperty(key); };
-        URLSearchParams.prototype.delete = function(key) { delete this._params[key]; };
+        URLSearchParams.prototype.delete = function(key) { delete this._params[key]; if (this._onChange) this._onChange(); };
         URLSearchParams.prototype.keys = function() { return Object.keys(this._params); };
         URLSearchParams.prototype.values = function() {
             var self = this;

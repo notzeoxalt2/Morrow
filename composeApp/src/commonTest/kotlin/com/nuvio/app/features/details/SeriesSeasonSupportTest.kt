@@ -74,4 +74,39 @@ class SeriesSeasonSupportTest {
         assertEquals(listOf(1), groupedEpisodes.keys.toList())
         assertEquals((1..episodeCount).toList(), groupedEpisodes.getValue(1).map(MetaVideo::episode))
     }
+
+    @Test
+    fun `absolute episode number follows broadcast order across seasons`() {
+        val meta = MetaDetails(
+            id = "anime",
+            type = "series",
+            name = "Anime",
+            videos = listOf(
+                MetaVideo(id = "s2e2", title = "S2E2", season = 2, episode = 2),
+                MetaVideo(id = "special", title = "Special", season = 0, episode = 1),
+                MetaVideo(id = "s1e2", title = "S1E2", season = 1, episode = 2),
+                MetaVideo(id = "s2e1", title = "S2E1", season = 2, episode = 1),
+                MetaVideo(id = "s1e1", title = "S1E1", season = 1, episode = 1),
+            ),
+        )
+
+        assertEquals(3, meta.absoluteEpisodeNumber(season = 2, episode = 1))
+        assertEquals(null, meta.absoluteEpisodeNumber(season = 0, episode = 1))
+        assertEquals(null, meta.absoluteEpisodeNumber(season = 9, episode = 1))
+    }
+
+    @Test
+    fun `anime defaults to flat episodes and quick jump opens at the selected episode`() {
+        val anime = MetaDetails(
+            id = "tmdb:one-piece",
+            type = "series",
+            name = "One Piece",
+            genres = listOf("Animation", "Adventure"),
+            country = "Japan",
+        )
+        assertEquals(true, anime.prefersFlatEpisodeCatalog())
+        assertEquals(89, episodeWindowStart(requestedEpisodeNumber = 90, episodeCount = 1_100, pageSize = 100))
+        assertEquals(1_099, episodeWindowStart(requestedEpisodeNumber = 1_500, episodeCount = 1_100, pageSize = 100))
+        assertEquals(0, episodeWindowStart(requestedEpisodeNumber = 0, episodeCount = 90, pageSize = 100))
+    }
 }

@@ -55,7 +55,8 @@ fun SkipIntroButton(
 ) {
     var lastType by remember { mutableStateOf(interval?.type) }
     if (interval != null) lastType = interval.type
-    val shouldShow = interval != null && (!dismissed || controlsVisible)
+    // Once tapped, keep the prompt dismissed until the active segment changes.
+    val shouldShow = interval != null && !dismissed
 
     var autoHidden by remember { mutableStateOf(false) }
     var manuallyDismissed by remember { mutableStateOf(false) }

@@ -169,3 +169,7 @@ internal fun sourceCategories(types: List<String>): Set<String> = types.mapNotNu
         else -> null
     }
 }.toSet()
+
+internal fun AddonStreamGroup.matchesSourceCategory(category: String): Boolean =
+    if (category == "movies-series") sourceCategories.any { it == "movies" || it == "series" }
+    else category in sourceCategories

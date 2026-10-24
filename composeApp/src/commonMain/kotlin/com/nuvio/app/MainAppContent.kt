@@ -543,7 +543,7 @@ internal fun MainAppContent(
         if (!ownsAppRuntime) return@LaunchedEffect
         NetworkStatusRepository.ensureStarted()
         EpisodeReleaseNotificationsRepository.refreshAsync()
-        kotlinx.coroutines.delay(5_000)
+        kotlinx.coroutines.delay(1_000)
         initialHomeReady = true
     }
 
@@ -1066,10 +1066,7 @@ internal fun MainAppContent(
                 }
             }
 
-            if (!PlaybackAvailability.current().canStream(type, videoId)) {
-                NuvioToastController.show(playbackUnavailableMessage)
-                return
-            }
+            // Resolve current sources on the streams screen; cached capability checks can be stale during profile startup.
 
             val streamLaunchId = StreamLaunchStore.put(
                 StreamLaunch(

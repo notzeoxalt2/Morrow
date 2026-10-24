@@ -56,6 +56,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.geometry.Offset
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
+import coil3.size.Size
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -112,10 +119,9 @@ fun ProfileSelectionScreen(
     }
 
     LaunchedEffect(Unit) {
-        launch { titleAlpha.animateTo(1f, tween(600, easing = FastOutSlowInEasing)) }
-        launch { titleOffset.animateTo(0f, tween(600, easing = FastOutSlowInEasing)) }
-        delay(300)
-        manageAlpha.animateTo(1f, tween(500))
+        launch { titleAlpha.animateTo(1f, tween(220, easing = FastOutSlowInEasing)) }
+        launch { titleOffset.animateTo(0f, tween(220, easing = FastOutSlowInEasing)) }
+        manageAlpha.animateTo(1f, tween(220))
     }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -150,11 +156,17 @@ fun ProfileSelectionScreen(
             .fillMaxSize(),
     ) {
         val isTabletLayout = maxWidth >= 768.dp
-        ProfileBackgroundBackdrop(
-            profile = backgroundProfile,
-            colorOverride = hoveredProfileColor,
-            modifier = Modifier.fillMaxSize(),
-        )
+        Box(Modifier.fillMaxSize().background(Color.Black).drawWithCache {
+            val netflixBackground = Brush.radialGradient(
+                0.19f to Color(0xFF6F181D).copy(alpha = 0.8f),
+                0.60f to Color(0xFF380C0F).copy(alpha = 0.4f),
+                1f to Color.Transparent,
+                center = Offset(size.width * 0.5f, -size.height * 0.54f),
+                radius = size.width * 1.25f,
+            )
+            onDrawBehind { drawRect(netflixBackground) }
+        })
+        MemberBrandWordmark(height = 24.dp, modifier = Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 24.dp))
 
         AnimatedVisibility(
             visible = contentVisible,
@@ -179,23 +191,14 @@ fun ProfileSelectionScreen(
             ) {
                 Spacer(modifier = Modifier.height(if (isTabletLayout) 0.dp else 60.dp))
 
-                MemberBrandWordmark(
-                    height = if (isTabletLayout) 42.dp else 34.dp,
-                    modifier = Modifier.graphicsLayer {
-                        alpha = titleAlpha.value
-                        translationY = titleOffset.value
-                    },
-                )
-
-                Spacer(modifier = Modifier.height(if (isTabletLayout) 22.dp else 18.dp))
 
                 Text(
                     text = stringResource(Res.string.profile_who_is_watching),
                     style = MaterialTheme.typography.headlineLarge.copy(
-                        fontSize = 30.sp,
+                        fontSize = if (isTabletLayout) 28.sp else 26.sp,
                         letterSpacing = 0.sp,
                     ),
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = Color.White,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.graphicsLayer {
                         alpha = titleAlpha.value
@@ -225,7 +228,7 @@ fun ProfileSelectionScreen(
                                     ProfileAvatarCard(
                                         profile = profile,
                                         isEditMode = isEditMode,
-                                        animDelay = currentIndex * 80,
+                                        animDelay = currentIndex * 40,
                                         enabled = interactionEnabled,
                                         onHoverChange = { isHovered -> updateHoveredProfile(profile, isHovered) },
                                         onClick = {
@@ -234,7 +237,7 @@ fun ProfileSelectionScreen(
                                     )
                                 } else {
                                     AddProfileCard(
-                                        animDelay = currentIndex * 80,
+                                        animDelay = currentIndex * 40,
                                         enabled = interactionEnabled,
                                         onClick = onAddProfile,
                                     )
@@ -262,7 +265,7 @@ fun ProfileSelectionScreen(
                                             ProfileAvatarCard(
                                                 profile = profile,
                                                 isEditMode = isEditMode,
-                                                animDelay = currentIndex * 80,
+                                                animDelay = currentIndex * 40,
                                                 enabled = interactionEnabled,
                                                 onHoverChange = { isHovered -> updateHoveredProfile(profile, isHovered) },
                                                 onClick = {
@@ -271,7 +274,7 @@ fun ProfileSelectionScreen(
                                             )
                                         } else {
                                             AddProfileCard(
-                                                animDelay = currentIndex * 80,
+                                                animDelay = currentIndex * 40,
                                                 enabled = interactionEnabled,
                                                 onClick = onAddProfile,
                                             )
@@ -297,7 +300,7 @@ fun ProfileSelectionScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(24.dp))
+                            .clip(RoundedCornerShape(22.dp))
                             .background(
                                 if (isEditMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                                 else Color.Transparent,
@@ -306,7 +309,7 @@ fun ProfileSelectionScreen(
                                 width = 1.dp,
                                 color = if (isEditMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                                shape = RoundedCornerShape(24.dp),
+                                shape = RoundedCornerShape(22.dp),
                             )
                             .clickable(enabled = interactionEnabled) { isEditMode = !isEditMode }
                             .padding(horizontal = 24.dp, vertical = 10.dp),
@@ -365,6 +368,8 @@ private fun ProfileAvatarCard(
     onHoverChange: (Boolean) -> Unit,
     onClick: () -> Unit,
 ) {
+    val avatarSize = if (isDesktop) 108.dp else 96.dp
+    val avatarShape = RoundedCornerShape(12.dp)
     val avatarColor = remember(profile.avatarColorHex) {
         parseHexColor(profile.avatarColorHex)
     }
@@ -381,7 +386,7 @@ private fun ProfileAvatarCard(
     val animOffset = remember { Animatable(30f) }
 
     LaunchedEffect(Unit) {
-        delay(animDelay.toLong() + 150)
+        delay(animDelay.toLong())
         launch { animAlpha.animateTo(1f, tween(450, easing = FastOutSlowInEasing)) }
         launch { animScale.animateTo(1f, tween(500, easing = FastOutSlowInEasing)) }
         launch { animOffset.animateTo(0f, tween(500, easing = FastOutSlowInEasing)) }
@@ -434,23 +439,24 @@ private fun ProfileAvatarCard(
             .padding(8.dp),
     ) {
         Box(
-            modifier = Modifier.size(110.dp),
+            modifier = Modifier.size(avatarSize + 8.dp),
             contentAlignment = Alignment.Center,
         ) {
             if (avatarImageUrl != null) {
                 val bgColor = avatarItem?.bgColor?.let { parseHexColor(it) } ?: avatarColor
                 Box(
                     modifier = Modifier
-                        .size(110.dp)
-                        .clip(CircleShape)
+                        .size(avatarSize + 8.dp)
+                        .clip(avatarShape)
                         .background(bgColor.copy(alpha = 0.2f)),
                 )
             }
 
             Box(
                 modifier = Modifier
-                    .size(100.dp)
-                    .clip(CircleShape)
+                    .size(avatarSize)
+                    .border(if (isHovered) 3.dp else 0.dp, if (isHovered) Color.White else Color.Transparent, avatarShape)
+                    .clip(avatarShape)
                     .background(
                         if (avatarItem != null) {
                             avatarItem.bgColor?.let { parseHexColor(it) } ?: avatarColor
@@ -459,17 +465,18 @@ private fun ProfileAvatarCard(
                         },
                     )
                     .then(
-                        if (avatarImageUrl == null) Modifier.border(2.dp, avatarColor.copy(alpha = 0.4f), CircleShape)
+                        if (avatarImageUrl == null) Modifier.border(2.dp, avatarColor.copy(alpha = 0.4f), avatarShape)
                         else Modifier,
                     ),
                 contentAlignment = Alignment.Center,
             ) {
                 if (avatarImageUrl != null) {
                     AsyncImage(
-                        model = avatarImageUrl,
+                        model = ImageRequest.Builder(LocalPlatformContext.current).data(avatarImageUrl).size(Size.ORIGINAL).build(),
                         contentDescription = avatarItem?.displayName ?: profile.name,
-                        modifier = Modifier.size(100.dp).clip(CircleShape),
-                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(avatarSize).clip(avatarShape),
+                        contentScale = ContentScale.Fit,
+                        filterQuality = FilterQuality.High,
                     )
                 } else if (profile.name.isNotBlank()) {
                     Text(
@@ -534,8 +541,8 @@ private fun ProfileAvatarCard(
                 stringResource(Res.string.profile_label_number, profile.profileIndex)
             },
             style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold,
+            color = if (isHovered) Color.White else Color(0xFFB3B3B3),
+            fontWeight = FontWeight.Normal,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

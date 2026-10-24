@@ -79,6 +79,21 @@ data class PluginScraper(
     }
 }
 
+/** True when this scraper expects anime-specific IDs or absolute episode context. */
+internal fun PluginScraper.isAnimeProvider(): Boolean =
+    supportedTypes.any { normalizePluginType(it) == "anime" } ||
+        repositoryUrl.contains("anime", ignoreCase = true) ||
+        id.contains("anime", ignoreCase = true) ||
+        name.contains("anime", ignoreCase = true) ||
+        listOf(
+            "anikage", "animesalt", "hianime", "animepahe", "anidb", "anikototv",
+            "aniwaves", "anitaku", "miruro", "reanime", "animeheaven", "kurage",
+            "animedekho", "anime-nexus", "lunarx", "saltanime", "marin", "zoro",
+            "yugen", "kickassanime", "allanime", "otaku",
+        ).any { marker ->
+            id.contains(marker, ignoreCase = true) || name.contains(marker, ignoreCase = true)
+        }
+
 data class PluginRuntimeResult(
     val title: String,
     val name: String? = null,

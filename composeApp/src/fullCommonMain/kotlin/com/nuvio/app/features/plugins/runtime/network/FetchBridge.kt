@@ -27,8 +27,9 @@ internal class FetchBridge : HostModule {
             val headersJson = args.getOrNull(2)?.toString() ?: "{}"
             val body = args.getOrNull(3)?.toString() ?: ""
             val followRedirects = args.getOrNull(4) as? Boolean ?: true
+            val timeoutMs = (args.getOrNull(5) as? Number)?.toLong()?.coerceIn(1_000L, 20_000L) ?: 5_000L
             try {
-                withTimeoutOrNull(5_000L) { performNativeFetch(url, method, headersJson, body, followRedirects) }
+                withTimeoutOrNull(timeoutMs) { performNativeFetch(url, method, headersJson, body, followRedirects) }
                     ?: JsonObject(mapOf("ok" to JsonPrimitive(false), "status" to JsonPrimitive(0),
                         "statusText" to JsonPrimitive("Request timed out"), "url" to JsonPrimitive(url),
                         "body" to JsonPrimitive(""), "headers" to JsonObject(emptyMap()))).toString()

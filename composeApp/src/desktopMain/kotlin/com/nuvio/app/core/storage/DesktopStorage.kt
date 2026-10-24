@@ -11,6 +11,10 @@ import java.util.Properties
 import kotlin.io.path.exists
 
 internal object DesktopStorage {
+    val isProviderPreview: Boolean
+        get() = System.getProperty("morrow.providerPreview") == "true" ||
+            System.getenv("MORROW_PROVIDER_PREVIEW") == "1"
+    private val storageName: String get() = if (isProviderPreview) "MorrowPreview" else "Morrow"
     private val json = Json { ignoreUnknownKeys = true }
     private val stores = mutableMapOf<String, Store>()
 
@@ -44,14 +48,14 @@ internal object DesktopStorage {
         val osName = System.getProperty("os.name").orEmpty().lowercase(Locale.ROOT)
         val userHome = Paths.get(System.getProperty("user.home").orEmpty())
         return when {
-            osName.contains("mac") -> userHome.resolve("Library/Application Support/Morrow")
+            osName.contains("mac") -> userHome.resolve("Library/Application Support/$storageName")
             osName.contains("win") -> {
                 val appData = System.getenv("APPDATA")?.takeIf { it.isNotBlank() }
-                (appData?.let(Paths::get) ?: userHome.resolve("AppData/Roaming")).resolve("Morrow")
+                (appData?.let(Paths::get) ?: userHome.resolve("AppData/Roaming")).resolve(storageName)
             }
             else -> {
                 val xdgConfig = System.getenv("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() }
-                (xdgConfig?.let(Paths::get) ?: userHome.resolve(".config")).resolve("morrow")
+                (xdgConfig?.let(Paths::get) ?: userHome.resolve(".config")).resolve(storageName.lowercase())
             }
         }
     }
@@ -60,14 +64,14 @@ internal object DesktopStorage {
         val osName = System.getProperty("os.name").orEmpty().lowercase(Locale.ROOT)
         val userHome = Paths.get(System.getProperty("user.home").orEmpty())
         return when {
-            osName.contains("mac") -> userHome.resolve("Library/Caches/Morrow")
+            osName.contains("mac") -> userHome.resolve("Library/Caches/$storageName")
             osName.contains("win") -> {
                 val localAppData = System.getenv("LOCALAPPDATA")?.takeIf { it.isNotBlank() }
-                (localAppData?.let(Paths::get) ?: userHome.resolve("AppData/Local")).resolve("Morrow/Cache")
+                (localAppData?.let(Paths::get) ?: userHome.resolve("AppData/Local")).resolve("$storageName/Cache")
             }
             else -> {
                 val xdgCache = System.getenv("XDG_CACHE_HOME")?.takeIf { it.isNotBlank() }
-                (xdgCache?.let(Paths::get) ?: userHome.resolve(".cache")).resolve("morrow")
+                (xdgCache?.let(Paths::get) ?: userHome.resolve(".cache")).resolve(storageName.lowercase())
             }
         }
     }
