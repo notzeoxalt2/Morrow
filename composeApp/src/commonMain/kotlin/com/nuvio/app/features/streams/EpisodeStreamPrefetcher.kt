@@ -10,8 +10,10 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.absoluteEpisodeNumber
 import com.nuvio.app.features.plugins.PluginRepository
-import com.nuvio.app.features.plugins.isAnimeProvider
+import com.nuvio.app.features.plugins.episodeArgument
+import com.nuvio.app.features.plugins.requiresVerifiedAbsoluteAnimeEpisode
 import com.nuvio.app.features.plugins.normalizePluginType
+import com.nuvio.app.features.plugins.pluginExecutionTimeoutMs
 import com.nuvio.app.features.plugins.contentParentId
 import com.nuvio.app.features.plugins.pluginContentId
 import kotlinx.coroutines.CoroutineScope
@@ -286,11 +288,13 @@ object EpisodeStreamPrefetcher {
         val installedAddons = AddonRepository.uiState.value.addons.enabledAddons()
         val streamAddons = installedAddons.mapNotNull { addon ->
             val manifest = addon.manifest ?: return@mapNotNull null
-            if (!manifest.supportsStream(type, videoId)) return@mapNotNull null
+            val effectiveType = if (isAnime) "anime" else type
+            if (!manifest.supportsStream(effectiveType, videoId)) return@mapNotNull null
             InstalledStreamAddonTarget(
                 addonName = addon.displayTitle.ifBlank { manifest.name },
                 addonId = addon.streamAddonInstanceId(manifest.id),
                 manifest = manifest,
+                requestTypes = manifest.streamRequestTypes(effectiveType, videoId),
             )
         }
 
@@ -298,19 +302,8 @@ object EpisodeStreamPrefetcher {
             scope.launch {
                 runCatching {
                     withTimeoutOrNull(10_000L) {
-                        val url = buildAddonResourceUrl(
-                            manifestUrl = addon.manifest.transportUrl,
-                            resource = "stream",
-                            type = type,
-                            id = videoId,
-                        )
-                        val payload = fetchAddonResponseText(url = url, forceRefresh = false)
-                        val parsed = StreamParser.parse(
-                            payload = payload,
-                            addonName = addon.addonName,
-                            addonId = addon.addonId,
-                            addonLogo = addon.manifest.logoUrl,
-                        )
+                        val parsed = addon.fetchStreams(videoId, forceRefresh = false).getOrThrow()
+                            .filter { it.matchesRequestedEpisode(season, episode) }
                         if (parsed.isNotEmpty()) {
                             synchronized(collectedGroups) {
                                 collectedGroups.add(
@@ -335,26 +328,30 @@ object EpisodeStreamPrefetcher {
             val pluginUiState = PluginRepository.uiState.value
             val providerGroups = pluginScrapers.toPluginProviderGroups(
                 repositories = pluginUiState.repositories,
-                groupByRepository = pluginUiState.groupStreamsByRepository,
+                groupByRepository = false,
             )
             val semaphore = Semaphore(2)
             providerGroups.flatMap { pGroup ->
-                pGroup.scrapers.map { scraper ->
+                pGroup.scrapers.filterNot {
+                    it.requiresVerifiedAbsoluteAnimeEpisode(season, absoluteAnimeEpisode, isAnime)
+                }.map { scraper ->
                     scope.launch {
                         runCatching {
                             semaphore.withPermit {
-                                withTimeoutOrNull(15_000L) {
+                                withTimeoutOrNull(pluginExecutionTimeoutMs(scraper.id) + 1_000L) {
                                     PluginRepository.executeScraper(
                                         scraper = scraper,
                                         tmdbId = pluginContentId(videoId, season, episode),
-                                        mediaType = if (isAnime && scraper.isAnimeProvider()) "anime" else normalizePluginType(type),
+                                        mediaType = if (isAnime) "anime" else normalizePluginType(type),
                                         season = season,
-                                        episode = episode,
-                                        animeEpisodeNumber = absoluteAnimeEpisode.takeIf { isAnime && scraper.isAnimeProvider() },
-                                        animeTitle = meta?.name?.takeIf { isAnime && scraper.isAnimeProvider() },
+                                        episode = scraper.episodeArgument(episode, absoluteAnimeEpisode, isAnime, season),
+                                        animeEpisodeNumber = absoluteAnimeEpisode.takeIf { isAnime },
+                                        animeTitle = meta?.name?.takeIf { isAnime },
+                                        animeSeasonEpisodeNumber = episode.takeIf { isAnime },
                                     ).getOrNull()?.let { results ->
-                                        if (results.isNotEmpty()) {
-                                            val items = results.map {
+                                        val matchingResults = results.filter { it.matchesRequestedEpisode(season, episode) }
+                                        if (matchingResults.isNotEmpty()) {
+                                            val items = matchingResults.map {
                                                 it.toStreamItem(
                                                     scraper = scraper,
                                                     addonName = pGroup.addonName,

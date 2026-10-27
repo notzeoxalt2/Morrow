@@ -75,7 +75,10 @@ internal fun PlayerStreamList(
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(
-                    text = error ?: stringResource(Res.string.compose_player_no_streams_found),
+                    text = error ?: if (streamsUiState.selectedFilter != null &&
+                        !streamsUiState.selectedFilter.startsWith("category:")) {
+                        "This provider returned no streams for the selected title and episode."
+                    } else stringResource(Res.string.compose_player_no_streams_found),
                     color = Color.White.copy(alpha = if (error == null) 0.7f else 0.85f),
                     style = MaterialTheme.typography.bodyLarge,
                 )

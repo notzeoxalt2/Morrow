@@ -1,10 +1,8 @@
 /*
- * Requested-sites-only Nuvio provider.
+ * Single Anidap shared anime resolver.
  *
- * The listed domains expose different frontends and rotate frequently. The
- * shared anime resolver returns the current server roster for those sites;
- * this adapter requests every SUB and DUB server concurrently and keeps
- * successful results when an individual host is unavailable.
+ * This is one provider backed by Anidap's shared anime index. It does not
+ * scrape the other site names that were previously exposed as wrappers.
  */
 
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
@@ -13,31 +11,6 @@ const RESOLVER_BASE = "https://anidap.lol";
 const STREAM_BASE = "https://chad.anidap.lol/rest/api";
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36";
-
-const REQUESTED_SITES = [
-  "https://animesalt.cx/",
-  "https://saltanime.in/",
-  "https://animedekho.app/",
-  "https://hianime.at/home",
-  "https://anikage.cc/",
-  "https://www.miruro.to/",
-  "https://reanime.to/home",
-  "https://animepahe.pw/",
-  "https://anikototv.to/",
-  "https://www.enma.lol/",
-  "https://anime.nexus/",
-  "https://anidb.app/home",
-  "https://anidap.lol/",
-  "https://animex.one/home",
-  "https://animetvplus.xyz/",
-  "https://anistream.one/",
-  "https://kaa.lt/",
-  "https://justanime.to/",
-  "https://aniwaves.ru/",
-  "https://animeheaven.me/",
-  "https://anitaku.io/",
-  "https://lunarx.to/"
-];
 
 const cache = new Map();
 
@@ -268,7 +241,9 @@ async function allServerStreams(animeId, episode, servers) {
     const sources = Array.isArray(data && data.sources) ? data.sources : [];
     for (const source of sources) {
       const url = String((source && source.url) || "");
-      const key = `${server.language}:${url}`;
+      // Keep one result per advertised server even when multiple servers use
+      // the same underlying CDN URL; the server label/audio metadata matters.
+      const key = `${server.language}:${server.id}:${url}`;
       if (!url || seenUrls.has(key)) continue;
       seenUrls.add(key);
       const isDub = server.language === "DUB";
@@ -285,7 +260,8 @@ async function allServerStreams(animeId, episode, servers) {
           ? data.tracks.map((track) => ({ ...track, url: cleanTrack(track.url) })).filter((track) => track.url)
           : [],
         chapters: Array.isArray(data.chapters) ? data.chapters : [],
-        provider: "requested-anime-sites"
+        provider: "anidap-shared-resolver",
+        sourceSite: "https://anidap.lol/"
       });
     }
   }
@@ -324,25 +300,9 @@ async function getStreams(tmdbId, mediaType = "tv", season = 1, episode = 1) {
     );
     return await allServerStreams(animeId, safeEpisode, servers);
   } catch (error) {
-    console.error(`[Requested Anime Sites] ${error.message}`);
+    console.error(`[Anidap Shared Resolver] ${error.message}`);
     return [];
   }
 }
 
-function providerForSite(name, url) {
-  const providerId = normalized(name).replace(/\s+/g, "-");
-  return {
-    async getStreams(...args) {
-      const streams = await getStreams(...args);
-      return streams.map((stream) => ({
-        ...stream,
-        name: `${name} | ${stream.name}`,
-        title: `${stream.title} | ${name}`,
-        provider: providerId,
-        sourceSite: url
-      }));
-    }
-  };
-}
-
-module.exports = { getStreams, REQUESTED_SITES, providerForSite };
+module.exports = { getStreams };

@@ -447,6 +447,20 @@ fun languageMatchesPreference(trackLanguage: String?, targetLanguage: String): B
     return trackPrimary == targetPrimary
 }
 
+/** Returns a language code only when metadata resolves to a language supported by the UI. */
+fun audioTrackLanguageCode(language: String?, label: String?): String? {
+    fun supported(value: String?): String? {
+        val normalized = normalizeLanguageCode(value)
+            ?.takeUnless { it.equals("und", ignoreCase = true) || it.equals("unknown", ignoreCase = true) }
+            ?: return null
+        return normalized.takeIf { code ->
+            AvailableLanguageOptions.any { normalizeLanguageCode(it.code) == code }
+        }
+    }
+
+    return supported(language) ?: supported(label)
+}
+
 private fun languageLabelResForCode(code: String?): StringResource? {
     val normalized = normalizeLanguageCode(code) ?: return null
     return AvailableLanguageOptions.firstOrNull {

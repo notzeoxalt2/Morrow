@@ -11,10 +11,15 @@ import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.debrid.DirectDebridStreamPreparer
 import com.nuvio.app.features.debrid.LocalDebridAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.absoluteEpisodeNumber
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.PluginsUiState
 import com.nuvio.app.features.plugins.normalizePluginType
+import com.nuvio.app.features.plugins.episodeArgument
+import com.nuvio.app.features.plugins.requiresVerifiedAbsoluteAnimeEpisode
+import com.nuvio.app.features.plugins.PLUGIN_VERIFIED_ANIME_MAPPING_REQUIRED
+import com.nuvio.app.features.plugins.pluginExecutionTimeoutMs
 import com.nuvio.app.features.plugins.contentParentId
 import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.tmdb.TmdbService
@@ -28,11 +33,17 @@ import com.nuvio.app.features.streams.StreamLoadCompletion
 import com.nuvio.app.features.streams.StreamParser
 import com.nuvio.app.features.streams.StreamSessionCache
 import com.nuvio.app.features.streams.StreamsUiState
+import com.nuvio.app.features.streams.fetchStreams
 import com.nuvio.app.features.streams.runCatchingUnlessCancelled
+import com.nuvio.app.features.streams.sourceCategories
 import com.nuvio.app.features.streams.sortedForGroupedDisplay
+import com.nuvio.app.features.streams.streamRequestTypes
 import com.nuvio.app.features.streams.streamAddonInstanceId
+import com.nuvio.app.features.streams.supportsStream
 import com.nuvio.app.features.streams.toEmptyStateReason
 import com.nuvio.app.features.streams.toPluginProviderGroups
+import com.nuvio.app.features.streams.matchesRequestedEpisode
+import com.nuvio.app.features.streams.upsertStreamGroupByProviderId
 import com.nuvio.app.features.streams.toStreamItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -310,7 +321,7 @@ object PlayerStreamsRepository {
         }
         val pluginProviderGroups = pluginScrapers.toPluginProviderGroups(
             repositories = pluginUiState.repositories,
-            groupByRepository = pluginUiState.groupStreamsByRepository,
+            groupByRepository = false,
         )
 
         if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
@@ -325,18 +336,13 @@ object PlayerStreamsRepository {
         val streamAddons = installedAddons
             .mapNotNull { addon ->
                 val manifest = addon.manifest ?: return@mapNotNull null
-                val supportsRequestedStream = manifest.resources.any { resource ->
-                    resource.name == "stream" &&
-                        resource.types.contains(type) &&
-                        (resource.idPrefixes.isEmpty() ||
-                            resource.idPrefixes.any { videoId.startsWith(it) })
-                }
-                if (!supportsRequestedStream) return@mapNotNull null
+                if (!manifest.supportsStream(effectiveType, videoId)) return@mapNotNull null
 
                 InstalledStreamAddonTarget(
                     addonName = addon.displayTitle.ifBlank { manifest.name },
                     addonId = addon.streamAddonInstanceId(manifest.id),
                     manifest = manifest,
+                    requestTypes = manifest.streamRequestTypes(effectiveType, videoId),
                 )
             }
 
@@ -374,7 +380,7 @@ object PlayerStreamsRepository {
                 streams = emptyList(),
                 isLoading = true,
             )
-        } + offlineAnimeGroups).distinctBy { it.addonName.lowercase().trim() }, installedAddonOrder)
+        } + offlineAnimeGroups).distinctBy { it.addonId }, installedAddonOrder)
         val isInitiallyLoading = initialGroups.any { it.isLoading }
         stateFlow.value = StreamsUiState(
             groups = initialGroups,
@@ -414,18 +420,9 @@ object PlayerStreamsRepository {
             fun publishStreamGroup(group: AddonStreamGroup) {
                 var nextState: StreamsUiState? = null
                 stateFlow.update { current ->
-                    val exists = current.groups.any {
-                        it.addonId == group.addonId || it.addonName.equals(group.addonName, ignoreCase = true)
-                    }
-                    val updatedList = if (exists) {
-                        current.groups.map { currentGroup ->
-                            if (currentGroup.addonId == group.addonId || currentGroup.addonName.equals(group.addonName, ignoreCase = true)) group else currentGroup
-                        }
-                    } else {
-                        current.groups + group
-                    }
+                    val updatedList = current.groups.upsertStreamGroupByProviderId(group)
                     val updated = StreamAutoPlaySelector.orderAddonStreams(
-                        groups = updatedList.distinctBy { it.addonName.lowercase().trim() },
+                        groups = updatedList.distinctBy { it.addonId },
                         installedOrder = installedAddonOrder,
                     )
                     val anyLoading = updated.any { it.isLoading }
@@ -487,34 +484,15 @@ object PlayerStreamsRepository {
 
             streamAddons.forEach { addon ->
                 launch {
-                    val url = buildAddonResourceUrl(
-                        manifestUrl = addon.manifest.transportUrl,
-                        resource = "stream",
-                        type = type,
-                        id = videoId,
-                    )
-
                     val displayName = addon.addonName
-                    val group = runCatchingUnlessCancelled {
-                        log.d { "fetch $panelName request=$requestKey addon=$displayName" }
-                        val payload = fetchAddonResponseText(
-                            url = url,
-                            forceRefresh = forceRefresh,
-                        )
-                        val parsed = StreamParser.parse(
-                            payload = payload,
-                            addonName = displayName,
-                            addonId = addon.addonId,
-                            addonLogo = addon.manifest.logoUrl,
-                        )
-                        parsed
-                    }.fold(
+                    val group = addon.fetchStreams(videoId, forceRefresh).fold(
                         onSuccess = { streams ->
-                            log.d { "fetched $panelName request=$requestKey addon=$displayName streams=${streams.size}" }
-                            AddonStreamGroup(displayName, addon.addonId, streams, isLoading = false)
+                            val matchingStreams = streams.filter { it.matchesRequestedEpisode(season, episode) }
+                            log.d { "fetched $panelName request=$requestKey addon=$displayName streams=${matchingStreams.size} types=${addon.requestTypes}" }
+                            AddonStreamGroup(displayName, addon.addonId, matchingStreams, isLoading = false)
                         },
                         onFailure = { err ->
-                            log.w(err) { "failed $panelName request=$requestKey addon=$displayName" }
+                            log.w(err) { "failed $panelName request=$requestKey addon=$displayName types=${addon.requestTypes}" }
                             AddonStreamGroup(displayName, addon.addonId, emptyList(), isLoading = false, error = err.message)
                         },
                     )
@@ -536,7 +514,12 @@ object PlayerStreamsRepository {
             val metaYear = meta?.releaseInfo?.take(4)
             val isAnime = type.equals("anime", ignoreCase = true) ||
                 videoId.startsWith("kitsu:") || videoId.startsWith("mal:") || videoId.startsWith("anilist:") ||
-                resolvedParentId.startsWith("kitsu:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("anilist:")
+                resolvedParentId.startsWith("kitsu:") || resolvedParentId.startsWith("mal:") || resolvedParentId.startsWith("anilist:") ||
+                meta?.genres?.any { it.equals("Anime", ignoreCase = true) || it.contains("anime", ignoreCase = true) } == true ||
+                (meta?.genres?.any { it.contains("animation", ignoreCase = true) } == true &&
+                    (meta.country?.contains("JP", ignoreCase = true) == true || meta.country?.contains("Japan", ignoreCase = true) == true ||
+                        meta.language?.equals("ja", ignoreCase = true) == true || meta.language?.contains("Japanese", ignoreCase = true) == true))
+            val absoluteAnimeEpisode = if (isAnime) meta?.absoluteEpisodeNumber(season, episode) else null
 
 
 
@@ -546,9 +529,15 @@ object PlayerStreamsRepository {
                 providerGroup.scrapers.forEach { scraper ->
                     launch {
                         log.d { "fetch $panelName request=$requestKey plugin=${scraper.name}" }
-                        val completion = try {
+                        val completion = if (scraper.requiresVerifiedAbsoluteAnimeEpisode(season, absoluteAnimeEpisode, isAnime)) {
+                            StreamLoadCompletion.PluginScraper(
+                                addonId = providerGroup.addonId,
+                                streams = emptyList(),
+                                error = PLUGIN_VERIFIED_ANIME_MAPPING_REQUIRED,
+                            )
+                        } else try {
                             pluginSemaphore.withPermit {
-                                withTimeoutOrNull(25_000L) {
+                                withTimeoutOrNull(pluginExecutionTimeoutMs(scraper.id) + 1_000L) {
                                     val targetContentId = pluginContentId(
                                         videoId = videoId,
                                         season = season,
@@ -557,15 +546,19 @@ object PlayerStreamsRepository {
                                     PluginRepository.executeScraper(
                                         scraper = scraper,
                                         tmdbId = targetContentId,
-                                        mediaType = type,
+                                        mediaType = if (isAnime) "anime" else normalizePluginType(type),
                                         season = season,
-                                        episode = episode,
+                                        episode = scraper.episodeArgument(episode, absoluteAnimeEpisode, isAnime, season),
+                                        animeEpisodeNumber = absoluteAnimeEpisode.takeIf { isAnime },
+                                        animeTitle = meta?.name?.takeIf { isAnime },
+                                        animeSeasonEpisodeNumber = episode.takeIf { isAnime },
                                     ).fold(
                                         onSuccess = { results ->
-                                            log.d { "fetched $panelName request=$requestKey plugin=${scraper.name} streams=${results.size}" }
+                                            val matchingResults = results.filter { it.matchesRequestedEpisode(season, episode) }
+                                            log.d { "fetched $panelName request=$requestKey plugin=${scraper.name} streams=${matchingResults.size}" }
                                             StreamLoadCompletion.PluginScraper(
                                                 addonId = providerGroup.addonId,
-                                                streams = results.map { result ->
+                                                streams = matchingResults.map { result ->
                                                     result.toStreamItem(
                                                         scraper = scraper,
                                                         addonName = providerGroup.addonName,

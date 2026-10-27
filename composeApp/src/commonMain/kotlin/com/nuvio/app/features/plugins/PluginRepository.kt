@@ -41,5 +41,6 @@ expect object PluginRepository {
         episode: Int?,
         animeEpisodeNumber: Int? = null,
         animeTitle: String? = null,
+        animeSeasonEpisodeNumber: Int? = null,
     ): Result<List<PluginRuntimeResult>>
 }

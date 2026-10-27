@@ -50,6 +50,7 @@ actual object PluginRepository {
         episode: Int?,
         animeEpisodeNumber: Int?,
         animeTitle: String?,
+        animeSeasonEpisodeNumber: Int?,
     ): Result<List<PluginRuntimeResult>> =
         Result.failure(UnsupportedOperationException(getString(Res.string.plugins_error_unavailable_build)))
 }

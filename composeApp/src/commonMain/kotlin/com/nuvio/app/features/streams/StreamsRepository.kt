@@ -15,7 +15,10 @@ import com.nuvio.app.features.details.absoluteEpisodeNumber
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
-import com.nuvio.app.features.plugins.isAnimeProvider
+import com.nuvio.app.features.plugins.episodeArgument
+import com.nuvio.app.features.plugins.requiresVerifiedAbsoluteAnimeEpisode
+import com.nuvio.app.features.plugins.PLUGIN_VERIFIED_ANIME_MAPPING_REQUIRED
+import com.nuvio.app.features.plugins.pluginExecutionTimeoutMs
 import com.nuvio.app.features.plugins.normalizePluginType
 import com.nuvio.app.features.plugins.contentParentId
 import com.nuvio.app.features.plugins.pluginContentId
@@ -288,7 +291,7 @@ object StreamsRepository {
         }
         val pluginProviderGroups = pluginScrapers.toPluginProviderGroups(
             repositories = pluginUiState.repositories,
-            groupByRepository = pluginUiState.groupStreamsByRepository,
+            groupByRepository = false,
         )
 
         val offlineAnimeGroups = emptyList<AddonStreamGroup>()
@@ -297,12 +300,13 @@ object StreamsRepository {
         val streamAddons = installedAddons
             .mapNotNull { addon ->
                 val manifest = addon.manifest ?: return@mapNotNull null
-                if (!manifest.supportsStream(type, videoId)) return@mapNotNull null
+                if (!manifest.supportsStream(effectiveType, videoId)) return@mapNotNull null
 
                 InstalledStreamAddonTarget(
                     addonName = addon.displayTitle.ifBlank { manifest.name },
                     addonId = addon.streamAddonInstanceId(manifest.id),
                     manifest = manifest,
+                    requestTypes = manifest.streamRequestTypes(effectiveType, videoId),
                 )
             }
 
@@ -322,11 +326,11 @@ object StreamsRepository {
             AddonStreamGroup(
                 addonName = providerGroup.addonName,
                 addonId = providerGroup.addonId,
-                sourceCategories = sourceCategories(providerGroup.scrapers.flatMap { it.supportedTypes }),
+                sourceCategories = providerGroup.scrapers.flatMap { it.sourceCategories() }.toSet(),
                 streams = emptyList(),
                 isLoading = true,
             )
-        } + offlineAnimeGroups).distinctBy { it.addonName.lowercase().trim() }
+        } + offlineAnimeGroups).distinctBy { it.addonId }
         val initialGroups = StreamAutoPlaySelector.orderAddonStreams(allPlaceholders, installedAddonOrder)
         val cachedById = cachedSessionStreams?.associateBy { it.addonId }.orEmpty()
         val populatedInitialGroups = initialGroups.map { group ->
@@ -428,18 +432,9 @@ object StreamsRepository {
 
             fun publishAddonGroup(group: AddonStreamGroup) {
                 _uiState.update { current ->
-                    val exists = current.groups.any {
-                        it.addonId == group.addonId || it.addonName.equals(group.addonName, ignoreCase = true)
-                    }
-                    val updatedList = if (exists) {
-                        current.groups.map { currentGroup ->
-                            if (currentGroup.addonId == group.addonId || currentGroup.addonName.equals(group.addonName, ignoreCase = true)) group else currentGroup
-                        }
-                    } else {
-                        current.groups + group
-                    }
+                    val updatedList = current.groups.upsertStreamGroupByProviderId(group)
                     val updated = StreamAutoPlaySelector.orderAddonStreams(
-                        groups = updatedList.distinctBy { it.addonName.lowercase().trim() },
+                        groups = updatedList.distinctBy { it.addonId },
                         installedOrder = installedAddonOrder,
                     )
                     val anyLoading = updated.any { it.isLoading }
@@ -536,23 +531,9 @@ object StreamsRepository {
                 launch {
                     val displayName = addon.addonName
                     val group = try {
-                        val url = buildAddonResourceUrl(
-                            manifestUrl = addon.manifest.transportUrl,
-                            resource = "stream",
-                            type = type,
-                            id = videoId,
-                        )
-                        log.d { "Fetching streams from: $url" }
-                        val payload = fetchAddonResponseText(
-                            url = url,
-                            forceRefresh = forceRefresh,
-                        )
-                        val parsed = StreamParser.parse(
-                            payload = payload,
-                            addonName = displayName,
-                            addonId = addon.addonId,
-                            addonLogo = addon.manifest.logoUrl,
-                        )
+                        log.d { "Fetching streams from ${addon.requestTypes.size} type route(s): ${addon.requestTypes}" }
+                        val parsed = addon.fetchStreams(videoId, forceRefresh).getOrThrow()
+                            .filter { it.matchesRequestedEpisode(season, episode) }
                         AddonStreamGroup(
                             addonName = displayName,
                             addonId = addon.addonId,
@@ -581,9 +562,15 @@ object StreamsRepository {
                 val includeScraperNameInSubtitle = false
                 providerGroup.scrapers.forEach { scraper ->
                     launch {
-                        val completion = try {
+                        val completion = if (scraper.requiresVerifiedAbsoluteAnimeEpisode(season, absoluteAnimeEpisode, isAnime)) {
+                            StreamLoadCompletion.PluginScraper(
+                                addonId = providerGroup.addonId,
+                                streams = emptyList(),
+                                error = PLUGIN_VERIFIED_ANIME_MAPPING_REQUIRED,
+                            )
+                        } else try {
                             pluginSemaphore.withPermit {
-                                withTimeoutOrNull(12_000L) {
+                                withTimeoutOrNull(pluginExecutionTimeoutMs(scraper.id) + 1_000L) {
                                     val targetContentId = pluginContentId(
                                         videoId = videoId,
                                         season = season,
@@ -592,16 +579,17 @@ object StreamsRepository {
                                     PluginRepository.executeScraper(
                                         scraper = scraper,
                                         tmdbId = targetContentId,
-                                        mediaType = if (isAnime && scraper.isAnimeProvider()) "anime" else normalizePluginType(type),
+                                        mediaType = if (isAnime) "anime" else normalizePluginType(type),
                                         season = season,
-                                        episode = episode,
-                                        animeEpisodeNumber = absoluteAnimeEpisode.takeIf { isAnime && scraper.isAnimeProvider() },
-                                        animeTitle = meta?.name?.takeIf { isAnime && scraper.isAnimeProvider() },
+                                        episode = scraper.episodeArgument(episode, absoluteAnimeEpisode, isAnime, season),
+                                        animeEpisodeNumber = absoluteAnimeEpisode.takeIf { isAnime },
+                                        animeTitle = meta?.name?.takeIf { isAnime },
+                                        animeSeasonEpisodeNumber = episode.takeIf { isAnime },
                                     ).fold(
                                         onSuccess = { results ->
                                             StreamLoadCompletion.PluginScraper(
                                                 addonId = providerGroup.addonId,
-                                                streams = results.map { result ->
+                                                streams = results.filter { it.matchesRequestedEpisode(season, episode) }.map { result ->
                                                     result.toStreamItem(
                                                         scraper = scraper,
                                                         addonName = providerGroup.addonName,

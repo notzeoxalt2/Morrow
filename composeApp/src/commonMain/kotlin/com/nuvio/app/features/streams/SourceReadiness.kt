@@ -16,7 +16,7 @@ import kotlin.time.TimeSource
 
 internal enum class SourceReadiness(val label: String) {
     CHECKING("Checking media URL…"),
-    REACHABLE("● Media URL responds"),
+    REACHABLE("● URL responds · playback unverified"),
     FAILED("● Media URL unavailable"),
     UNKNOWN("○ Could not verify"),
     RESOLVE("○ Checked when resolved"),

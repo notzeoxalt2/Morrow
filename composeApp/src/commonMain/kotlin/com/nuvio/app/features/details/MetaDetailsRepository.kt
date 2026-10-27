@@ -6,6 +6,7 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.addons.fetchAddonResponseText
+import com.nuvio.app.features.anime.AnimeMetadataService
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.filterReleasedItems
 import com.nuvio.app.features.mdblist.MdbListMetadataService
@@ -46,6 +47,7 @@ object MetaDetailsRepository {
     val uiState: StateFlow<MetaDetailsUiState> = _uiState.asStateFlow()
     private var activeRequestKey: String? = null
     private val cachedMetaByRequestKey = mutableMapOf<String, CachedMetaEntry>()
+    private val animeEnrichmentStarted = mutableSetOf<String>()
 
     fun load(type: String, id: String) {
         log.d { "load() called — type=$type id=$id" }
@@ -60,6 +62,7 @@ object MetaDetailsRepository {
                 ?.let { cachedMeta ->
                     _uiState.value = MetaDetailsUiState(meta = cachedMeta.withUnreleasedFilter())
                     activeRequestKey = requestKey
+                    scheduleAnimeMetadataEnrichment(requestKey, cachedMeta, id, type)
                     return
                 }
 
@@ -67,6 +70,7 @@ object MetaDetailsRepository {
             if (!shouldEnrichForMetaScreen(cachedBaseMeta, id, mdbListSettings)) {
                 _uiState.value = MetaDetailsUiState(meta = cachedBaseMeta.withUnreleasedFilter())
                 activeRequestKey = requestKey
+                scheduleAnimeMetadataEnrichment(requestKey, cachedBaseMeta, id, type)
                 return
             }
 
@@ -94,6 +98,7 @@ object MetaDetailsRepository {
                 }
                 _uiState.value = MetaDetailsUiState(meta = enrichedMeta.withUnreleasedFilter())
                 activeRequestKey = requestKey
+                scheduleAnimeMetadataEnrichment(requestKey, enrichedMeta, id, type)
             }
             return
         }
@@ -190,6 +195,7 @@ object MetaDetailsRepository {
     fun clear() {
         activeRequestKey = null
         cachedMetaByRequestKey.clear()
+        animeEnrichmentStarted.clear()
         _uiState.value = MetaDetailsUiState()
     }
 
@@ -347,6 +353,7 @@ object MetaDetailsRepository {
         if (!shouldEnrichForMetaScreen(meta, fallbackItemId, mdbListSettings)) {
             _uiState.value = MetaDetailsUiState(meta = meta.withUnreleasedFilter())
             activeRequestKey = requestKey
+            scheduleAnimeMetadataEnrichment(requestKey, meta, fallbackItemId, fallbackItemType)
             return
         }
 
@@ -370,6 +377,88 @@ object MetaDetailsRepository {
         )
         _uiState.value = MetaDetailsUiState(meta = enrichedMeta.withUnreleasedFilter())
         activeRequestKey = requestKey
+        scheduleAnimeMetadataEnrichment(requestKey, enrichedMeta, fallbackItemId, fallbackItemType)
+    }
+
+    /** Resolve anime ID/episode crosswalks off the initial render path, then refresh the active metadata. */
+    private fun scheduleAnimeMetadataEnrichment(
+        requestKey: String,
+        meta: MetaDetails,
+        fallbackItemId: String,
+        fallbackItemType: String,
+    ) {
+        if (!isAnimeMetadata(meta, fallbackItemType)) return
+        val needsAnimeMapping = meta.malId == null || meta.videos.any {
+            it.season != null && it.season > 0 && it.episode != null && it.episode > 0 &&
+                ((it.absoluteEpisodeNumber == null || it.absoluteEpisodeNumber <= 0) || it.animeMalId == null)
+        }
+        if (!needsAnimeMapping || !animeEnrichmentStarted.add(requestKey)) return
+
+        scope.launch {
+            val enriched = try {
+                withContext(Dispatchers.Default) {
+                    withTimeoutOrNull(6_000L) {
+                        AnimeMetadataService.enrichMeta(meta, fallbackItemId)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                animeEnrichmentStarted.remove(requestKey)
+                throw cancelled
+            } catch (error: Throwable) {
+                log.w(error) { "Anime episode mapping failed for $requestKey" }
+                null
+            }
+
+            if (enriched == null) return@launch
+            val current = cachedMetaByRequestKey[requestKey] ?: return@launch
+            val mergedBase = mergeAnimeMetadata(current.baseMeta, enriched)
+            val mergedScreen = current.metaScreenMeta?.let { mergeAnimeMetadata(it, enriched) }
+            cachedMetaByRequestKey[requestKey] = current.copy(
+                baseMeta = mergedBase,
+                metaScreenMeta = mergedScreen,
+            )
+
+            if (activeRequestKey == requestKey && _uiState.value.meta?.id == meta.id) {
+                val stateMeta = mergedScreen ?: mergedBase
+                _uiState.value = _uiState.value.copy(meta = stateMeta.withUnreleasedFilter())
+            }
+        }
+    }
+
+    private fun isAnimeMetadata(meta: MetaDetails, fallbackItemType: String): Boolean =
+        fallbackItemType.equals("anime", ignoreCase = true) ||
+            meta.type.equals("anime", ignoreCase = true) ||
+            meta.id.startsWith("anilist:", ignoreCase = true) ||
+            meta.id.startsWith("mal:", ignoreCase = true) ||
+            meta.id.startsWith("kitsu:", ignoreCase = true) ||
+            meta.isAnimeCatalog()
+
+    private fun mergeAnimeMetadata(current: MetaDetails, enriched: MetaDetails): MetaDetails {
+        val enrichedByEpisode = enriched.videos
+            .filter { it.season != null && it.episode != null }
+            .associateBy { it.season to it.episode }
+        val mergedVideos = current.videos.map { video ->
+            val mapped = if (video.season != null && video.episode != null) {
+                enrichedByEpisode[video.season to video.episode]
+            } else null
+            if (mapped == null) video else video.copy(
+                title = if (video.title.startsWith("Episode ", ignoreCase = true)) mapped.title else video.title,
+                absoluteEpisodeNumber = mapped.absoluteEpisodeNumber ?: video.absoluteEpisodeNumber,
+                animeMalId = mapped.animeMalId ?: video.animeMalId,
+                thumbnail = video.thumbnail ?: mapped.thumbnail,
+                overview = video.overview ?: mapped.overview,
+            )
+        }
+        return current.copy(
+            malId = current.malId ?: enriched.malId,
+            imdbId = current.imdbId ?: enriched.imdbId,
+            background = current.background ?: enriched.background,
+            poster = current.poster ?: enriched.poster,
+            description = current.description ?: enriched.description,
+            externalRatings = (current.externalRatings + enriched.externalRatings).distinctBy { it.source },
+            genres = current.genres.ifEmpty { enriched.genres },
+            videos = mergedVideos,
+        )
     }
 
     private suspend fun enrichForMetaScreen(

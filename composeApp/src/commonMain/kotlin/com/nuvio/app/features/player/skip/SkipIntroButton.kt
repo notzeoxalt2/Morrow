@@ -109,19 +109,19 @@ fun SkipIntroButton(
                 .clickable { onSkip() },
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Default.SkipNext,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(24.dp),
                 )
                 Text(
                     text = skipLabel(lastType),
                     color = Color.White,
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }

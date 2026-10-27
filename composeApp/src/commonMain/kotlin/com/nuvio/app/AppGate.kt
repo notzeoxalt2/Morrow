@@ -215,14 +215,22 @@ internal fun AppGate(
         switchingProfile = profile
         try {
             ProfileRepository.switchToProfile(profile.profileIndex)
-            warmProfileBoundRepositories()
-            if (sync) {
-                withContext(Dispatchers.Default) {
-                    SyncManager.pullAllForProfile(profile.profileIndex)
-                }
-            }
         } finally {
             switchingProfile = null
+        }
+
+        // Switch the visible app using local profile state first. Repository warm-up
+        // and remote sync can take seconds and should not hold the profile gate open.
+        gateScope.launch {
+            if (ProfileRepository.activeProfileId != profile.profileIndex) return@launch
+            runCatching { warmProfileBoundRepositories() }
+            if (sync && ProfileRepository.activeProfileId == profile.profileIndex) {
+                runCatching {
+                    withContext(Dispatchers.Default) {
+                        SyncManager.pullAllForProfile(profile.profileIndex)
+                    }
+                }
+            }
         }
     }
 

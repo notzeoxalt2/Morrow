@@ -875,7 +875,8 @@ internal fun ProviderFilterRow(
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val addonGroups = groups.providerSections().filter { it.streams.isNotEmpty() || it.isLoading }
+    // Keep completed zero-result sources visible so users can tell they were checked.
+    val addonGroups = groups.providerSections()
         .sortedBy { providerDisplayName(it.addonName).lowercase() }
     val scrollState = rememberScrollState()
 
@@ -911,7 +912,11 @@ internal fun ProviderFilterRow(
         }.forEach { group ->
             key(group.addonId) {
                 FilterChip(
-                    label = providerDisplayName(group.addonName),
+                    label = buildString {
+                        append(providerDisplayName(group.addonName))
+                        append(" · ")
+                        append(if (group.isLoading) "…" else group.streams.size)
+                    },
                     logoUrl = group.streams.firstNotNullOfOrNull { it.addonLogo },
                     isSelected = selectedFilter == group.addonId,
                     onClick = { onFilterSelected(group.addonId) },
@@ -1044,11 +1049,10 @@ internal fun StreamList(
     modifier: Modifier = Modifier,
 ) {
     val filteredGroups = uiState.filteredGroups
-    val hasGroups = filteredGroups.isNotEmpty()
     val hasAnyStreams = filteredGroups.any { it.streams.isNotEmpty() }
     val anyLoading = filteredGroups.any { it.isLoading }
-    val streamSections = remember(filteredGroups) {
-        buildStreamSectionRenderModels(filteredGroups)
+    val streamSections = remember(filteredGroups, uiState.groups) {
+        buildStreamSectionRenderModels(filteredGroups, uiState.groups)
     }
     val torrentNotSupportedText = stringResource(Res.string.streams_torrent_not_supported)
     val listState = rememberLazyListState()
@@ -1074,7 +1078,7 @@ internal fun StreamList(
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             when {
-                hasGroups && anyLoading && !hasAnyStreams -> {
+                filteredGroups.isEmpty() && uiState.isAnyLoading -> {
                     item(
                         key = "streams_loading",
                         contentType = STREAM_CONTENT_TYPE_LOADING,
@@ -1088,7 +1092,13 @@ internal fun StreamList(
                         key = "streams_empty",
                         contentType = STREAM_CONTENT_TYPE_EMPTY,
                     ) {
-                        EmptyStateBlock(reason = uiState.emptyStateReason)
+                        if (uiState.selectedFilter != null && !uiState.selectedFilter.startsWith("category:")) {
+                            ProviderEmptyStateBlock(
+                                group = filteredGroups.providerSections(uiState.groups).firstOrNull(),
+                            )
+                        } else {
+                            EmptyStateBlock(reason = uiState.emptyStateReason)
+                        }
                     }
                 }
 
@@ -1110,6 +1120,14 @@ internal fun StreamList(
                             resumePositionMs = resumePositionMs,
                             resumeProgressFraction = resumeProgressFraction,
                         )
+                    }
+                    if (streamSections.isEmpty() && uiState.isAnyLoading) {
+                        item(
+                            key = "streams_loading",
+                            contentType = STREAM_CONTENT_TYPE_LOADING,
+                        ) {
+                            LoadingStateBlock(findingStreamsText = findingStreamsText)
+                        }
                     }
                     if (anyLoading) {
                         item(
@@ -1139,8 +1157,12 @@ internal fun StreamList(
     }
 }
 
-private fun buildStreamSectionRenderModels(groups: List<AddonStreamGroup>): List<StreamSectionRenderModel> =
-    groups.providerSections().withDuplicateSafeLazyKeys { group -> streamSectionRenderKey(group) }
+private fun buildStreamSectionRenderModels(
+    groups: List<AddonStreamGroup>,
+    allGroupsForLinkDetection: List<AddonStreamGroup> = groups,
+): List<StreamSectionRenderModel> =
+    groups.providerSections(allGroupsForLinkDetection)
+        .withDuplicateSafeLazyKeys { group -> streamSectionRenderKey(group) }
         .mapIndexed { index, keyedGroup ->
             val group = keyedGroup.value
             val sectionKey = keyedGroup.lazyKey.toString()
@@ -1823,6 +1845,34 @@ private fun EmptyStateBlock(
         )
         Text(
             text = message,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun ProviderEmptyStateBlock(group: AddonStreamGroup?, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.SearchOff,
+            contentDescription = null,
+            modifier = Modifier.size(40.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        )
+        Text(
+            text = group?.addonName ?: "Provider",
+            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = group?.error?.takeIf { it.isNotBlank() }
+                ?: "This provider returned no streams for the selected title and episode.",
             style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             textAlign = TextAlign.Center,

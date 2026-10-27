@@ -1446,6 +1446,8 @@
     <string name="player_next_episode_unaired">Unaired</string>
     <string name="player_skip">Skip</string>
     <string name="player_skip_intro">Skip Intro</string>
+    <string name="player_episode_filler">Filler</string>
+    <string name="player_episode_recap">Recap</string>
     <string name="player_skip_outro">Skip Outro</string>
     <string name="player_skip_recap">Skip Recap</string>
     <string name="player_auto_skip_intro_notification">Intro skipped to %1$s</string>

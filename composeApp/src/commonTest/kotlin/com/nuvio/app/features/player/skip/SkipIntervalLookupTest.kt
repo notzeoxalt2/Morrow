@@ -30,6 +30,38 @@ class SkipIntervalLookupTest {
     }
 
     @Test
+    fun prefersExactSeasonMalMappingAndLocalEpisode() {
+        assertEquals(
+            SkipIntervalLookup.Mal("11223", episode = 3),
+            resolveSkipIntervalLookup(
+                "mal:62322:4:3",
+                season = 4,
+                episode = 3,
+                mappedMalId = 11223,
+                mappedMalEpisode = 3,
+                absoluteEpisode = 91,
+            ),
+        )
+    }
+
+    @Test
+    fun mapsParentMalIdOnlyWhenAnExactEpisodeIsKnown() {
+        assertEquals(
+            SkipIntervalLookup.Mal("62322", episode = 91),
+            resolveSkipIntervalLookup(
+                "tmdb:123",
+                season = 4,
+                episode = 3,
+                mappedMalId = 62322,
+                absoluteEpisode = 91,
+            ),
+        )
+        assertNull(
+            resolveSkipIntervalLookup("tmdb:123", season = 4, episode = 3, mappedMalId = 62322),
+        )
+    }
+
+    @Test
     fun resolvesKitsuEpisodeEmbeddedInVideoId() {
         assertEquals(
             SkipIntervalLookup.Kitsu("12345", episode = 8),

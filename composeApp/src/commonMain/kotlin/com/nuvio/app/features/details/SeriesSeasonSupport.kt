@@ -41,17 +41,17 @@ internal fun MetaDetails.groupedEpisodesForDisplay(): Map<Int, List<MetaVideo>> 
     }
 }
 
-/** Returns the one-based broadcast order used by anime catalogs that number episodes across seasons. */
+/** Returns a verified AniZip broadcast number; never infer a flat-catalog number from list order. */
 internal fun MetaDetails.absoluteEpisodeNumber(season: Int?, episode: Int?): Int? {
     if (season == null || episode == null || season <= SPECIALS_SEASON_NUMBER || episode <= 0) return null
-    val orderedEpisodes = videos
-        .filter { (it.season ?: SPECIALS_SEASON_NUMBER) > SPECIALS_SEASON_NUMBER && (it.episode ?: 0) > 0 }
-        .sortedWith(metaVideoSeasonEpisodeComparator)
-    val index = orderedEpisodes.indexOfFirst { it.season == season && it.episode == episode }
-    return index.takeIf { it >= 0 }?.plus(1)
+    videos.firstOrNull { it.season == season && it.episode == episode }
+        ?.absoluteEpisodeNumber
+        ?.takeIf { it > 0 }
+        ?.let { return it }
+    return null
 }
 
-internal fun MetaDetails.prefersFlatEpisodeCatalog(): Boolean =
+internal fun MetaDetails.isAnimeCatalog(): Boolean =
     id.startsWith("anilist:", ignoreCase = true) ||
         id.startsWith("mal:", ignoreCase = true) ||
         id.startsWith("kitsu:", ignoreCase = true) ||
@@ -61,6 +61,18 @@ internal fun MetaDetails.prefersFlatEpisodeCatalog(): Boolean =
                 country?.contains("Japan", ignoreCase = true) == true ||
                 language?.equals("ja", ignoreCase = true) == true ||
                 language?.contains("Japanese", ignoreCase = true) == true))
+
+/**
+ * Keep short, genuinely split anime in season view by default. Very long catalogs
+ * start flat so users can page through large episode runs without crossing season tabs.
+ */
+internal fun MetaDetails.prefersFlatEpisodeCatalog(): Boolean {
+    if (!isAnimeCatalog()) return false
+    val numberedEpisodes = videos.filter { (it.season ?: 0) > 0 && (it.episode ?: 0) > 0 }
+    if (numberedEpisodes.isEmpty()) return true
+    val seasonCount = numberedEpisodes.mapNotNull { it.season }.distinct().size
+    return seasonCount <= 1 || numberedEpisodes.size >= 200
+}
 
 internal fun episodeWindowStart(
     requestedEpisodeNumber: Int?,

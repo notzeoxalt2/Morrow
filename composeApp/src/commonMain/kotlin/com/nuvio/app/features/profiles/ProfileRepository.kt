@@ -39,6 +39,9 @@ import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -199,7 +202,7 @@ object ProfileRepository {
         }
     }
 
-    private fun selectProfile(profileIndex: Int) {
+    private suspend fun selectProfile(profileIndex: Int) {
         activeProfileIndex = profileIndex
         val selectedProfile = _state.value.profiles.find { it.profileIndex == profileIndex }
         _state.value = _state.value.copy(
@@ -218,25 +221,33 @@ object ProfileRepository {
         if (com.nuvio.app.core.build.AppFeaturePolicy.pluginsEnabled) {
             PluginRepository.onProfileChanged(profileIndex)
         }
-        ThemeSettingsRepository.onProfileChanged()
-        PosterCardStyleRepository.onProfileChanged()
-        CardDepthStyleRepository.onProfileChanged()
-        PlayerSettingsRepository.onProfileChanged()
-        StreamBadgeSettingsRepository.onProfileChanged()
-        P2pSettingsRepository.onProfileChanged()
-        HomeCatalogSettingsRepository.onProfileChanged()
         HomeRepository.clear()
-        MetaScreenSettingsRepository.onProfileChanged()
-        ContinueWatchingPreferencesRepository.onProfileChanged()
-        com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache.onProfileChanged()
-        EpisodeReleaseNotificationsRepository.onProfileChanged()
-        TmdbSettingsRepository.onProfileChanged()
-        MdbListSettingsRepository.onProfileChanged()
-        SearchHistoryRepository.onProfileChanged()
-        SearchRepository.reset()
-        CollectionRepository.onProfileChanged()
-        CollectionMobileSettingsRepository.onProfileChanged()
-        DownloadsRepository.onProfileChanged()
+
+        // These profile-scoped settings are independent local loads. Applying them one by one
+        // made desktop profile switching wait on a long chain of small storage reads.
+        coroutineScope {
+            listOf(
+                async { ThemeSettingsRepository.onProfileChanged() },
+                async { PosterCardStyleRepository.onProfileChanged() },
+                async { CardDepthStyleRepository.onProfileChanged() },
+                async { PlayerSettingsRepository.onProfileChanged() },
+                async { StreamBadgeSettingsRepository.onProfileChanged() },
+                async { P2pSettingsRepository.onProfileChanged() },
+                async { HomeCatalogSettingsRepository.onProfileChanged() },
+                async { MetaScreenSettingsRepository.onProfileChanged() },
+                async { ContinueWatchingPreferencesRepository.onProfileChanged() },
+                async { com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache.onProfileChanged() },
+                async { EpisodeReleaseNotificationsRepository.onProfileChanged() },
+                async { TmdbSettingsRepository.onProfileChanged() },
+                async { MdbListSettingsRepository.onProfileChanged() },
+                async { SearchHistoryRepository.onProfileChanged() },
+                async { SearchRepository.reset() },
+                async { CollectionRepository.onProfileChanged() },
+                async { CollectionMobileSettingsRepository.onProfileChanged() },
+                async { DownloadsRepository.onProfileChanged() },
+            ).awaitAll()
+        }
+
         ProfileSettingsSync.onProfileChanged()
     }
 

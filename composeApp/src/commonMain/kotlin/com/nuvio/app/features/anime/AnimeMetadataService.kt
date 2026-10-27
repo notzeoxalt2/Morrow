@@ -7,6 +7,9 @@ import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaExternalRating
 import com.nuvio.app.features.details.MetaVideo
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import io.ktor.http.encodeURLParameter
 import kotlinx.serialization.Serializable
@@ -38,6 +41,7 @@ data class AniListPage(
 data class AniListMediaItem(
     val id: Int = 0,
     val idMal: Int? = null,
+    val format: String? = null,
     val title: AniListTitle? = null,
     val bannerImage: String? = null,
     val coverImage: AniListCoverImage? = null,
@@ -91,6 +95,8 @@ data class AniZipMappings(
 @Serializable
 data class AniZipEpisode(
     val episodeNumber: Int? = null,
+    val seasonNumber: Int? = null,
+    val absoluteEpisodeNumber: Int? = null,
     val episode: String? = null,
     val title: Map<String, String?>? = null,
     val image: String? = null,
@@ -121,9 +127,26 @@ data class JikanAnimeData(
     val episodes: Int? = null,
 )
 
+@Serializable
+data class TenraiEpisodeResponse(
+    val data: TenraiEpisodeData? = null,
+)
+
+@Serializable
+data class TenraiEpisodeData(
+    val mal_id: Int = 0,
+    val filler: Boolean? = null,
+    val recap: Boolean? = null,
+)
+
+enum class AnimeEpisodeClassification {
+    Filler,
+    Recap,
+}
+
 /**
  * Anime metadata & ID mapping service ported from SmoothVega's animeMetadata.ts.
- * Integrates AniList GraphQL (graphql.anilist.co), AniZip (api.ani.zip), and Jikan/MAL.
+ * Integrates AniList GraphQL (graphql.anilist.co), AniZip (api.ani.zip), and Tenrai/MAL.
  */
 object AnimeMetadataService {
     private val log = Logger.withTag("AnimeMetadataService")
@@ -132,13 +155,14 @@ object AnimeMetadataService {
     private const val ANILIST_URL = "https://graphql.anilist.co"
     private const val ANILIST_TOKEN = "J9qZpsXQM9K5vUOwu4LfpKDgAgr1gPvwi0f9sz2F"
     private const val ANIZIP_URL = "https://api.ani.zip/mappings"
-    private const val JIKAN_URL = "https://api.jikan.moe/v4/anime"
+    private const val TENRAI_URL = "https://api.tenrai.org/v1/anime"
     private const val KITSU_URL = "https://kitsu.io/api/edge/anime"
     private const val TVMAZE_URL = "https://api.tvmaze.com"
 
     private val searchCache = mutableMapOf<String, List<AniListMediaItem>>()
     private val idCache = mutableMapOf<Int, AniListMediaItem>()
     private val aniZipCache = mutableMapOf<Int, AniZipResponse>()
+    private val episodeClassificationCache = mutableMapOf<String, AnimeEpisodeClassification?>()
 
     private const val SEARCH_QUERY = """
         query SearchAnime(${'$'}search: String) {
@@ -146,6 +170,7 @@ object AnimeMetadataService {
             media(search: ${'$'}search, type: ANIME, isAdult: false) {
               id
               idMal
+              format
               title {
                 english
                 romaji
@@ -175,6 +200,7 @@ object AnimeMetadataService {
           Media(id: ${'$'}id, type: ANIME, isAdult: false) {
             id
             idMal
+            format
             title {
               english
               romaji
@@ -314,7 +340,7 @@ object AnimeMetadataService {
     suspend fun getMalDetails(malId: Int): JikanAnimeData? {
         if (malId <= 0) return null
         return try {
-            val url = "$JIKAN_URL/$malId"
+            val url = "$TENRAI_URL/$malId"
             val text = withTimeoutOrNull(5000L) {
                 httpGetText(url)
             } ?: return null
@@ -324,10 +350,40 @@ object AnimeMetadataService {
         } catch (c: CancellationException) {
             throw c
         } catch (t: Throwable) {
-            log.w(t) { "Jikan MAL lookup failed for malId=$malId" }
+            log.w(t) { "Tenrai MAL lookup failed for malId=$malId" }
             null
         }
     }
+
+    /** Returns a community classification for one exact MAL episode, or null when unknown/canon. */
+    suspend fun getEpisodeClassification(malId: Int, episode: Int): AnimeEpisodeClassification? {
+        if (malId <= 0 || episode <= 0) return null
+        val cacheKey = "$malId:$episode"
+        if (episodeClassificationCache.containsKey(cacheKey)) return episodeClassificationCache[cacheKey]
+
+        return try {
+            val response = withTimeoutOrNull(3_500L) {
+                httpGetText("$TENRAI_URL/$malId/episodes/$episode")
+            } ?: return null
+            val payload = json.decodeFromString<TenraiEpisodeResponse>(response).data ?: return null
+            if (payload.mal_id != episode) return null
+            classifyAnimeEpisode(payload.filler, payload.recap).also {
+                episodeClassificationCache[cacheKey] = it
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            log.w(error) { "Tenrai episode classification failed for $cacheKey" }
+            null
+        }
+    }
+
+    internal fun classifyAnimeEpisode(filler: Boolean?, recap: Boolean?): AnimeEpisodeClassification? =
+        when {
+            filler == true -> AnimeEpisodeClassification.Filler
+            recap == true -> AnimeEpisodeClassification.Recap
+            else -> null
+        }
 
     /**
      * Enriches a MetaDetails item using AniList GraphQL, AniZip mappings, and MAL data.
@@ -347,7 +403,33 @@ object AnimeMetadataService {
         }
 
         val aniListMedia = getAniListById(extractedAniListId)
-        val aniZip = getAniZipMappings(extractedAniListId)
+        val animeCandidates = (listOfNotNull(aniListMedia) + searchAniList(meta.name))
+            .distinctBy { it.id }
+            .filter { candidate ->
+                val format = candidate.format?.uppercase()
+                val title = listOfNotNull(candidate.title?.english, candidate.title?.romaji, candidate.title?.native)
+                    .joinToString(" ").lowercase().filter(Char::isLetterOrDigit)
+                val baseTitle = meta.name.lowercase().filter(Char::isLetterOrDigit)
+                format in setOf("TV", "TV_SHORT", "ONA", "OVA") &&
+                    title.isNotBlank() && baseTitle.isNotBlank() &&
+                    (title.contains(baseTitle) || baseTitle.contains(title))
+            }
+            .take(4)
+        val animeMappings = coroutineScope {
+            animeCandidates.map { candidate ->
+                async { candidate.id to getAniZipMappings(candidate.id) }
+            }.awaitAll().mapNotNull { (id, mappings) -> mappings?.let { id to mappings } }.toMap()
+        }
+        val aniZip = animeMappings[extractedAniListId] ?: getAniZipMappings(extractedAniListId)
+        val mappedSeasonEpisodes = animeMappings.values
+            .flatMap { mappings ->
+                mappings.episodes.orEmpty().values.map { episode ->
+                    episode to mappings.mappings?.mal_id
+                }
+            }
+            .filter { (episode, _) ->
+                (episode.seasonNumber ?: 0) > 0 && (episode.episodeNumber ?: 0) > 0
+            }
         val malId = aniListMedia?.idMal ?: aniZip?.mappings?.mal_id
         val malData = malId?.let { getMalDetails(it) }
 
@@ -394,17 +476,37 @@ object AnimeMetadataService {
         }
 
         // Enrich videos with episode stills and canonical titles from AniZip
-        val enrichedVideos = if (aniZip?.episodes != null && meta.videos.isNotEmpty()) {
+        val enrichedVideos = if ((mappedSeasonEpisodes.isNotEmpty() || aniZip?.episodes != null) && meta.videos.isNotEmpty()) {
             meta.videos.map { video ->
-                val epKey = (video.episode ?: 1).toString()
-                val zipEp = aniZip.episodes[epKey]
-                    ?: aniZip.episodes.values.find { it.episodeNumber == video.episode }
+                val seasonMappedMatches = if (video.season != null && video.episode != null) {
+                    mappedSeasonEpisodes.filter { (episode, _) ->
+                        episode.seasonNumber == video.season && episode.episodeNumber == video.episode
+                    }
+                } else {
+                    emptyList()
+                }
+                val consistentSeasonMapping = seasonMappedMatches
+                    .distinctBy { it.first.absoluteEpisodeNumber to it.second }
+                    .singleOrNull()
+                val resolvedMapping = consistentSeasonMapping
+                    ?: if (video.season == null && video.episode != null) {
+                        mappedSeasonEpisodes.singleOrNull { (episode, _) ->
+                            episode.absoluteEpisodeNumber == video.episode && (episode.absoluteEpisodeNumber ?: 0) > 0
+                        } ?: aniZip?.episodes?.get(video.episode.toString())?.let { it to aniZip?.mappings?.mal_id }
+                    } else {
+                        aniZip?.episodes?.values?.singleOrNull {
+                            it.seasonNumber == video.season && it.episodeNumber == video.episode
+                        }?.let { it to aniZip?.mappings?.mal_id }
+                    }
+                val (zipEp, episodeMalId) = resolvedMapping ?: (null to null)
 
                 if (zipEp != null) {
                     video.copy(
                         title = if (video.title.startsWith("Episode ", ignoreCase = true) && !zipEp.displayTitle.isNullOrBlank()) {
                             "Episode ${video.episode}: ${zipEp.displayTitle}"
                         } else video.title,
+                        absoluteEpisodeNumber = zipEp.absoluteEpisodeNumber ?: video.absoluteEpisodeNumber,
+                        animeMalId = episodeMalId ?: video.animeMalId,
                         thumbnail = video.thumbnail ?: zipEp.image,
                         overview = video.overview ?: zipEp.overview ?: zipEp.summary,
                     )
@@ -420,6 +522,7 @@ object AnimeMetadataService {
             ?: aniZip?.mappings?.imdb_id?.takeIf { it.isNotBlank() }
 
         return meta.copy(
+            malId = malId ?: meta.malId,
             imdbId = resolvedImdbId,
             background = background,
             poster = poster,

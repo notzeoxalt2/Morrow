@@ -16,6 +16,7 @@ import com.nuvio.app.features.p2p.P2pSettingsUiState
 import com.nuvio.app.features.p2p.P2pStreamingState
 import com.nuvio.app.features.player.skip.NextEpisodeInfo
 import com.nuvio.app.features.player.skip.SkipInterval
+import com.nuvio.app.features.anime.AnimeEpisodeClassification
 import com.nuvio.app.features.streams.StreamsUiState
 import com.nuvio.app.features.tracking.TrackingMediaReference
 import com.nuvio.app.features.watched.WatchedUiState
@@ -219,6 +220,7 @@ internal class PlayerScreenRuntime(
     var playerMeta by mutableStateOf<MetaDetails?>(null)
     var skipIntervals by mutableStateOf<List<SkipInterval>>(emptyList())
     var activeSkipInterval by mutableStateOf<SkipInterval?>(null)
+    var activeEpisodeClassification by mutableStateOf<AnimeEpisodeClassification?>(null)
     var skipIntervalDismissed by mutableStateOf(false)
     val autoSkippedIntervalKeys = mutableSetOf<String>()
     var parentalWarnings by mutableStateOf<List<ParentalWarning>>(emptyList())
@@ -238,6 +240,7 @@ internal class PlayerScreenRuntime(
 
     var showAudioModal by mutableStateOf(false)
     var showSubtitleModal by mutableStateOf(false)
+    var showQuickTracksModal by mutableStateOf(false)
     var showVideoSettingsModal by mutableStateOf(false)
     var showVideoQualityModal by mutableStateOf(false)
     var videoQuality by mutableStateOf(VideoQuality.Max)

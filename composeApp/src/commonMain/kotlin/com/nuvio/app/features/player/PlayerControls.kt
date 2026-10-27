@@ -57,6 +57,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.AppIconResource
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.themePalette
@@ -64,6 +65,7 @@ import com.nuvio.app.core.ui.accentBrush
 import com.nuvio.app.core.ui.appIconPainter
 import com.nuvio.app.core.ui.gradientMask
 import com.nuvio.app.core.ui.nuvioTypeScale
+import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
@@ -75,6 +77,7 @@ internal fun PlayerControlsShell(
     seasonNumber: Int?,
     episodeNumber: Int?,
     episodeTitle: String?,
+    episodeClassificationLabel: String = "",
     playbackSnapshot: PlayerPlaybackSnapshot,
     displayedPositionMs: Long,
     metrics: PlayerLayoutMetrics,
@@ -148,6 +151,7 @@ internal fun PlayerControlsShell(
                 seasonNumber = seasonNumber,
                 episodeNumber = episodeNumber,
                 episodeTitle = episodeTitle,
+                episodeClassificationLabel = episodeClassificationLabel,
                 metrics = metrics,
                 isLocked = isLocked,
                 showActions = showPlaybackControls,
@@ -218,6 +222,7 @@ private fun PlayerHeader(
     seasonNumber: Int?,
     episodeNumber: Int?,
     episodeTitle: String?,
+    episodeClassificationLabel: String,
     metrics: PlayerLayoutMetrics,
     isLocked: Boolean,
     showActions: Boolean,
@@ -262,21 +267,41 @@ private fun PlayerHeader(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (seasonNumber != null && episodeNumber != null && !episodeTitle.isNullOrBlank()) {
-                        Text(
-                            text = stringResource(
-                                Res.string.compose_player_episode_title_format,
-                                seasonNumber,
-                                episodeNumber,
-                                episodeTitle,
-                            ),
-                            style = typeScale.bodyMd.copy(
-                                fontSize = metrics.episodeInfoSize,
-                                lineHeight = metrics.episodeInfoSize * 1.3f,
-                            ),
-                            color = Color.White.copy(alpha = 0.9f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    Res.string.compose_player_episode_title_format,
+                                    seasonNumber,
+                                    episodeNumber,
+                                    episodeTitle,
+                                ),
+                                style = typeScale.bodyMd.copy(
+                                    fontSize = metrics.episodeInfoSize,
+                                    lineHeight = metrics.episodeInfoSize * 1.3f,
+                                ),
+                                color = Color.White.copy(alpha = 0.9f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            if (episodeClassificationLabel.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(5.dp),
+                                    color = Color.White.copy(alpha = 0.16f),
+                                ) {
+                                    Text(
+                                        text = episodeClassificationLabel,
+                                        style = typeScale.labelSm.copy(fontWeight = FontWeight.SemiBold),
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                    )
+                                }
+                            }
+                        }
                     }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -528,16 +553,19 @@ private fun ProgressControls(
             horizontalArrangement = Arrangement.Center,
         ) {
             Surface(
-                color = Color.Black.copy(alpha = 0.5f),
+                color = if (isDesktop) Color.Transparent else Color.Black.copy(alpha = 0.5f),
                 shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.border(
+                modifier = if (isDesktop) Modifier else Modifier.border(
                     width = 1.dp,
                     color = Color.White.copy(alpha = 0.2f),
                     shape = RoundedCornerShape(24.dp),
                 ),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(
+                        horizontal = if (isDesktop) 0.dp else 4.dp,
+                        vertical = if (isDesktop) 0.dp else 2.dp,
+                    ),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -551,16 +579,24 @@ private fun ProgressControls(
                         icon = Icons.Filled.Speed,
                         onClick = onSpeedClick,
                     )
-                    PlayerActionPillButton(
-                        label = stringResource(Res.string.compose_player_subs),
-                        painter = subtitlesPainter,
-                        onClick = onSubtitleClick,
-                    )
-                    PlayerActionPillButton(
-                        label = stringResource(Res.string.compose_player_audio),
-                        painter = audioPainter,
-                        onClick = onAudioClick,
-                    )
+                    if (isDesktop) {
+                        PlayerActionPillButton(
+                            label = "${stringResource(Res.string.compose_player_audio)} & ${stringResource(Res.string.compose_player_subtitles)}",
+                            painter = subtitlesPainter,
+                            onClick = onSubtitleClick,
+                        )
+                    } else {
+                        PlayerActionPillButton(
+                            label = stringResource(Res.string.compose_player_subs),
+                            painter = subtitlesPainter,
+                            onClick = onSubtitleClick,
+                        )
+                        PlayerActionPillButton(
+                            label = stringResource(Res.string.compose_player_audio),
+                            painter = audioPainter,
+                            onClick = onAudioClick,
+                        )
+                    }
                     if (onQualityClick != null) {
                         PlayerActionPillButton(
                             label = videoQuality.label,
@@ -758,6 +794,18 @@ private fun TimePill(
     text: String,
     fontSize: androidx.compose.ui.unit.TextUnit,
 ) {
+    if (isDesktop) {
+        Text(
+            text = text,
+            style = MaterialTheme.nuvioTypeScale.labelSm.copy(
+                fontSize = fontSize,
+                lineHeight = fontSize * 1.25f,
+                fontWeight = FontWeight.Medium,
+            ),
+            color = Color.White.copy(alpha = 0.92f),
+        )
+        return
+    }
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
@@ -784,11 +832,15 @@ private fun PlayerActionPillButton(
     icon: ImageVector? = null,
     painter: Painter? = null,
 ) {
+    val iconSize = if (isDesktop) 22.dp else 18.dp
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(22.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(
+                horizontal = if (isDesktop) 10.dp else 12.dp,
+                vertical = if (isDesktop) 10.dp else 12.dp,
+            ),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -797,19 +849,21 @@ private fun PlayerActionPillButton(
                 painter = painter,
                 contentDescription = label,
                 tint = Color.White,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(iconSize),
             )
 
             icon != null -> Icon(
                 imageVector = icon,
                 contentDescription = label,
                 tint = Color.White,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(iconSize),
             )
         }
         Text(
             text = label,
-            style = MaterialTheme.nuvioTypeScale.labelSm,
+            style = MaterialTheme.nuvioTypeScale.labelSm.copy(
+                fontSize = if (isDesktop) 14.sp else MaterialTheme.nuvioTypeScale.labelSm.fontSize,
+            ),
             color = Color.White,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

@@ -76,7 +76,7 @@ class SeriesSeasonSupportTest {
     }
 
     @Test
-    fun `absolute episode number follows broadcast order across seasons`() {
+    fun `unmapped episode does not guess a broadcast number from list order`() {
         val meta = MetaDetails(
             id = "anime",
             type = "series",
@@ -90,9 +90,40 @@ class SeriesSeasonSupportTest {
             ),
         )
 
-        assertEquals(3, meta.absoluteEpisodeNumber(season = 2, episode = 1))
+        assertEquals(null, meta.absoluteEpisodeNumber(season = 2, episode = 1))
         assertEquals(null, meta.absoluteEpisodeNumber(season = 0, episode = 1))
         assertEquals(null, meta.absoluteEpisodeNumber(season = 9, episode = 1))
+    }
+
+    @Test
+    fun `explicit AniZip numbers map only the matching season and episode`() {
+        val meta = MetaDetails(
+            id = "anime",
+            type = "series",
+            name = "Anime",
+            videos = listOf(
+                MetaVideo(id = "s2e1", title = "S2E1", season = 2, episode = 1, absoluteEpisodeNumber = 25),
+                MetaVideo(id = "s2e2", title = "S2E2", season = 2, episode = 2, absoluteEpisodeNumber = 26),
+            ),
+        )
+
+        assertEquals(25, meta.absoluteEpisodeNumber(season = 2, episode = 1))
+        assertEquals(26, meta.absoluteEpisodeNumber(season = 2, episode = 2))
+        assertEquals(null, meta.absoluteEpisodeNumber(season = 2, episode = 3))
+    }
+
+    @Test
+    fun `explicit AniZip absolute episode number wins over incomplete local season data`() {
+        val meta = MetaDetails(
+            id = "tokyo-revengers",
+            type = "series",
+            name = "Tokyo Revengers",
+            videos = listOf(
+                MetaVideo(id = "s4e1", title = "Episode 1", season = 4, episode = 1, absoluteEpisodeNumber = 51),
+            ),
+        )
+
+        assertEquals(51, meta.absoluteEpisodeNumber(season = 4, episode = 1))
     }
 
     @Test
@@ -108,5 +139,51 @@ class SeriesSeasonSupportTest {
         assertEquals(89, episodeWindowStart(requestedEpisodeNumber = 90, episodeCount = 1_100, pageSize = 100))
         assertEquals(1_099, episodeWindowStart(requestedEpisodeNumber = 1_500, episodeCount = 1_100, pageSize = 100))
         assertEquals(0, episodeWindowStart(requestedEpisodeNumber = 0, episodeCount = 90, pageSize = 100))
+    }
+
+    @Test
+    fun `short anime with real season data opens in season view`() {
+        val seasonalAnime = MetaDetails(
+            id = "tmdb:tokyo-revengers",
+            type = "series",
+            name = "Tokyo Revengers",
+            genres = listOf("Animation", "Action"),
+            country = "Japan",
+            videos = (1..2).flatMap { season ->
+                (1..12).map { episode ->
+                    MetaVideo(
+                        id = "s${season}e$episode",
+                        title = "Episode $episode",
+                        season = season,
+                        episode = episode,
+                    )
+                }
+            },
+        )
+
+        assertEquals(true, seasonalAnime.isAnimeCatalog())
+        assertEquals(false, seasonalAnime.prefersFlatEpisodeCatalog())
+    }
+
+    @Test
+    fun `long anime episode catalog opens flat for quick paging`() {
+        val longAnime = MetaDetails(
+            id = "tmdb:naruto-shippuden",
+            type = "series",
+            name = "Naruto Shippuden",
+            genres = listOf("Animation", "Action"),
+            country = "Japan",
+            videos = (1..220).map { episode ->
+                MetaVideo(
+                    id = "episode-$episode",
+                    title = "Episode $episode",
+                    season = 1,
+                    episode = episode,
+                )
+            },
+        )
+
+        assertEquals(true, longAnime.isAnimeCatalog())
+        assertEquals(true, longAnime.prefersFlatEpisodeCatalog())
     }
 }

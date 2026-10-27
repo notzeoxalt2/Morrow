@@ -8,6 +8,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.details.absoluteEpisodeNumber
+import com.nuvio.app.features.details.isAnimeCatalog
+import com.nuvio.app.features.anime.AnimeMetadataService
 import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.p2p.P2pStreamRequest
 import com.nuvio.app.features.p2p.P2pStreamingEngine
@@ -474,8 +477,11 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         activeSeasonNumber,
         activeEpisodeNumber,
         parentMetaId,
+        playerMeta?.malId,
         playerSettingsUiState.skipIntroEnabled,
     ) {
+        val seasonNumber = activeSeasonNumber
+        val episodeNumber = activeEpisodeNumber
         skipIntervals = emptyList()
         activeSkipInterval = null
         skipIntervalDismissed = false
@@ -488,10 +494,26 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
 
         if (!playerSettingsUiState.skipIntroEnabled) return@LaunchedEffect
 
+        val episodeMeta = playerMeta?.videos?.firstOrNull {
+            it.season == seasonNumber && it.episode == episodeNumber
+        }
+        val mappedEpisodeMalId = episodeMeta?.animeMalId
+            ?: playerMeta?.malId?.takeIf { seasonNumber == null || seasonNumber <= 1 }
+        val mappedEpisodeNumber = when {
+            episodeMeta?.animeMalId != null -> episodeNumber
+            mappedEpisodeMalId != null && seasonNumber != null && seasonNumber <= 1 -> episodeNumber
+            else -> null
+        }
+        val absoluteEpisode = if (episodeMeta?.animeMalId != null) null else {
+            playerMeta?.absoluteEpisodeNumber(seasonNumber, episodeNumber)
+        }
         val lookup = resolveSkipIntervalLookup(
             videoId = activeVideoId,
-            season = activeSeasonNumber,
-            episode = activeEpisodeNumber,
+            season = seasonNumber,
+            episode = episodeNumber,
+            mappedMalId = mappedEpisodeMalId,
+            mappedMalEpisode = mappedEpisodeNumber,
+            absoluteEpisode = absoluteEpisode,
         ) ?: return@LaunchedEffect
 
         launch {
@@ -510,19 +532,55 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                     malId = lookup.malId,
                     episode = lookup.episode,
                     imdbId = imdbFromContent,
-                    imdbSeason = activeSeasonNumber,
-                    imdbEpisode = activeEpisodeNumber ?: lookup.episode,
+                    imdbSeason = seasonNumber,
+                    imdbEpisode = episodeNumber ?: lookup.episode,
                 )
                 is SkipIntervalLookup.Kitsu -> SkipIntroRepository.getSkipIntervalsForKitsu(
                     kitsuId = lookup.kitsuId,
                     episode = lookup.episode,
                     imdbId = imdbFromContent,
-                    imdbSeason = activeSeasonNumber,
-                    imdbEpisode = activeEpisodeNumber ?: lookup.episode,
+                    imdbSeason = seasonNumber,
+                    imdbEpisode = episodeNumber ?: lookup.episode,
                 )
             }
             skipIntervals = intervals
         }
+    }
+
+    LaunchedEffect(
+        activeVideoId,
+        activeSeasonNumber,
+        activeEpisodeNumber,
+        playerMeta?.malId,
+        playerMeta?.videos?.firstOrNull {
+            it.season == activeSeasonNumber && it.episode == activeEpisodeNumber
+        }?.animeMalId,
+    ) {
+        val seasonNumber = activeSeasonNumber
+        val episodeNumber = activeEpisodeNumber
+        activeEpisodeClassification = null
+        val isAnime = parentMetaType.equals("anime", ignoreCase = true) ||
+            playerMeta?.type.equals("anime", ignoreCase = true) ||
+            playerMeta?.isAnimeCatalog() == true ||
+            playerMeta?.genres?.any { it.equals("Anime", ignoreCase = true) || it.contains("anime", ignoreCase = true) } == true ||
+            parentMetaId.startsWith("anilist:", ignoreCase = true) ||
+            parentMetaId.startsWith("mal:", ignoreCase = true) ||
+            parentMetaId.startsWith("kitsu:", ignoreCase = true)
+        if (!isAnime) return@LaunchedEffect
+
+        val episodeMeta = playerMeta?.videos?.firstOrNull {
+            it.season == seasonNumber && it.episode == episodeNumber
+        }
+        val malId = episodeMeta?.animeMalId
+            ?: playerMeta?.malId?.takeIf { seasonNumber == null || seasonNumber <= 1 }
+            ?: return@LaunchedEffect
+        val malEpisode = when {
+            episodeMeta?.animeMalId != null -> episodeNumber
+            seasonNumber == null || seasonNumber <= 1 -> episodeNumber
+            else -> null
+        }?.takeIf { it > 0 } ?: return@LaunchedEffect
+
+        activeEpisodeClassification = AnimeMetadataService.getEpisodeClassification(malId, malEpisode)
     }
 
     LaunchedEffect(

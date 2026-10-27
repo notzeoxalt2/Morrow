@@ -7,6 +7,8 @@ data class MetaDetails(
     val id: String,
     val type: String,
     val name: String,
+    /** AniList-to-MAL mapping used by anime skip-time services. */
+    val malId: Int? = null,
     val imdbId: String? = null,
     val poster: String? = null,
     val background: String? = null,
@@ -95,10 +97,14 @@ data class MetaVideo(
     val seasonPoster: String? = null,
     val season: Int? = null,
     val episode: Int? = null,
+    /** AniZip's canonical across-season number, when this is a split season. */
+    val absoluteEpisodeNumber: Int? = null,
     val overview: String? = null,
     val runtime: Int? = null,
     val rating: Double? = null,
     val streams: List<StreamItem> = emptyList(),
+    /** Exact MAL entry for a season/episode when AniZip maps split anime seasons. */
+    val animeMalId: Int? = null,
 )
 
 data class MetaDetailsUiState(

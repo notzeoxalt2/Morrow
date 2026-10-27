@@ -188,11 +188,9 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.input.pointer.PointerButton
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.pointerInput
 import com.nuvio.app.core.ui.AppPresenceState
 import com.nuvio.app.core.ui.PresenceSnapshot
+import com.nuvio.app.core.ui.handleMouseBackForward
 import androidx.compose.ui.ExperimentalComposeUiApi
 import com.nuvio.app.features.player.dispatchNavigationBack
 
@@ -1305,21 +1303,10 @@ internal fun MainAppContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.nuvio.colors.background)
-                    .pointerInput(Unit) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                if (event.type == PointerEventType.Press) {
-                                    if (!event.changes.any { it.isConsumed }) {
-                                        if (event.button == PointerButton.Back) {
-                                            event.changes.forEach { it.consume() }
-                                            navController.popBackStack()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
+                    .handleMouseBackForward(
+                        onBack = { navController.popBackStack() },
+                        onForward = {},
+                    ),
             ) {
             Box(
                 modifier = Modifier
@@ -1525,17 +1512,33 @@ internal fun MainAppContent(
                         onProfileSelected = { profile ->
                             profileSwitchLoading = true
                             NativeTabBridge.publishTabBarVisible(false)
-                            activateTab(AppScreenTab.Home)
                             coroutineScope.launch {
+                                var switched = false
                                 try {
                                     ProfileRepository.switchToProfile(profile.profileIndex)
-                                    warmProfileBoundRepositories()
-                                    withContext(Dispatchers.Default) {
-                                        SyncManager.pullAllForProfile(profile.profileIndex)
-                                    }
-                                    delay(300)
+                                    switched = true
                                 } finally {
+                                    // Keep the current screen mounted during the local profile
+                                    // transition. Mounting Home here can start a burst of catalog
+                                    // work on desktop while the profile repositories are loading.
+                                    activateTab(AppScreenTab.Home)
                                     profileSwitchLoading = false
+                                }
+                                if (switched) {
+                                    // Release the UI as soon as local profile state is active.
+                                    // Catalog warming and cloud sync must not hold a black
+                                    // transition over Home for several seconds.
+                                    coroutineScope.launch {
+                                        if (ProfileRepository.activeProfileId != profile.profileIndex) return@launch
+                                        runCatching { warmProfileBoundRepositories() }
+                                        if (ProfileRepository.activeProfileId == profile.profileIndex) {
+                                            runCatching {
+                                                withContext(Dispatchers.Default) {
+                                                    SyncManager.pullAllForProfile(profile.profileIndex)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         },

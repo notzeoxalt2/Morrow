@@ -4,6 +4,21 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 internal const val PLUGIN_REPOSITORY_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1_000L
+internal const val PLUGIN_DEFAULT_EXECUTION_TIMEOUT_MS = 15_000L
+internal const val PLUGIN_EXTENDED_EXECUTION_TIMEOUT_MS = 45_000L
+internal const val PLUGIN_VERIFIED_ANIME_MAPPING_REQUIRED =
+    "Skipped to avoid the wrong episode: this provider needs a verified absolute episode mapping."
+
+/** Keep the caller's timeout aligned with the runtime for providers that enumerate multiple servers. */
+internal fun pluginExecutionTimeoutMs(scraperId: String): Long {
+    val providerId = scraperId.substringAfterLast(':').lowercase()
+    val extendedLookupProviders = listOf("aniflix", "meguanimes", "anikage", "animesalt")
+    return if (extendedLookupProviders.any { providerId == it || providerId.startsWith("$it-") }) {
+        PLUGIN_EXTENDED_EXECUTION_TIMEOUT_MS
+    } else {
+        PLUGIN_DEFAULT_EXECUTION_TIMEOUT_MS
+    }
+}
 
 internal fun isPluginRepositoryRefreshDue(
     lastUpdatedEpochMs: Long,
@@ -38,6 +53,8 @@ data class PluginManifestScraper(
     @SerialName("supportedFormats") val supportedFormats: List<String>? = null,
     @SerialName("supportsExternalPlayer") val supportsExternalPlayer: Boolean? = null,
     val limited: Boolean? = null,
+    /** "season-local" (default) or "absolute" for flat episode catalogs. */
+    val animeEpisodeNumbering: String? = null,
 )
 
 data class PluginRepositoryItem(
@@ -65,15 +82,16 @@ data class PluginScraper(
     val logo: String? = null,
     val contentLanguage: List<String> = emptyList(),
     val formats: List<String>? = null,
+    val animeEpisodeNumbering: String? = null,
     val code: String,
 ) {
     fun supportsType(type: String): Boolean {
         val normalizedType = normalizePluginType(type)
         if (normalizedType == "anime") {
-            return supportedTypes.any { st ->
-                val norm = normalizePluginType(st)
-                norm == "anime" || norm == "tv" || norm == "movie"
-            }
+            // Movie/TV adapters are not Anime adapters merely because Anime is
+            // transported through a TV or movie route. Anime crossover sources
+            // must declare anime support, or be a known Anime-specific adapter.
+            return supportedTypes.any { normalizePluginType(it) == "anime" } || isAnimeProvider()
         }
         return supportedTypes.map { normalizePluginType(it) }.contains(normalizedType)
     }
@@ -86,13 +104,53 @@ internal fun PluginScraper.isAnimeProvider(): Boolean =
         id.contains("anime", ignoreCase = true) ||
         name.contains("anime", ignoreCase = true) ||
         listOf(
-            "anikage", "animesalt", "hianime", "animepahe", "anidb", "anikototv",
-            "aniwaves", "anitaku", "miruro", "reanime", "animeheaven", "kurage",
-            "animedekho", "anime-nexus", "lunarx", "saltanime", "marin", "zoro",
+            "anidap", "anikage", "animesalt", "hianime", "animepahe", "anidb", "anikototv",
+            "aniwaves", "anitaku", "anistream", "miruro", "reanime", "animeheaven", "kurage",
+            "animedekho", "anime-nexus", "animex", "justanime", "lunarx", "saltanime", "marin", "zoro",
             "yugen", "kickassanime", "allanime", "otaku",
         ).any { marker ->
             id.contains(marker, ignoreCase = true) || name.contains(marker, ignoreCase = true)
         }
+
+private val absoluteEpisodeAnimeProviderIds = setOf(
+    "hianime-site", "anikage", "miruro", "reanime", "animeheaven", "kickassanime",
+    "anidap", "anistream", "animex", "justanime", "meguanimes",
+)
+
+/** Whether this provider expects flat, absolute numbering for Anime episodes. */
+internal fun PluginScraper.usesAbsoluteAnimeEpisodeNumbering(): Boolean = when (animeEpisodeNumbering?.trim()?.lowercase()) {
+    "absolute" -> true
+    "season-local" -> false
+    else -> id.substringAfterLast(':').trim().lowercase() in absoluteEpisodeAnimeProviderIds
+}
+
+internal fun PluginScraper.animeEpisodeNumberingMode(): String =
+    if (usesAbsoluteAnimeEpisodeNumbering()) "absolute" else "season-local"
+
+/** Avoid querying a flat catalog with a season-local number when the mapping is unknown. */
+internal fun PluginScraper.requiresVerifiedAbsoluteAnimeEpisode(
+    season: Int?,
+    absoluteAnimeEpisode: Int?,
+    isAnime: Boolean,
+): Boolean = isAnime &&
+    isAnimeProvider() &&
+    usesAbsoluteAnimeEpisodeNumbering() &&
+    season != null && season > 1 &&
+    absoluteAnimeEpisode?.let { it > 0 } != true
+
+/** Explicit manifest metadata wins; known flat-catalog adapters also survive stale manifests. */
+internal fun PluginScraper.episodeArgument(
+    episode: Int?,
+    absoluteAnimeEpisode: Int?,
+    isAnime: Boolean,
+    season: Int? = null,
+): Int? {
+    if (!isAnime || !isAnimeProvider()) return episode
+    val usesAbsoluteNumbering = animeEpisodeNumberingMode() == "absolute"
+    if (!usesAbsoluteNumbering) return episode
+    return absoluteAnimeEpisode?.takeIf { it > 0 }
+        ?: episode?.takeIf { season == null || season <= 1 }
+}
 
 data class PluginRuntimeResult(
     val title: String,
@@ -163,6 +221,7 @@ internal data class StoredPluginScraper(
     val logo: String? = null,
     val contentLanguage: List<String> = emptyList(),
     val formats: List<String>? = null,
+    val animeEpisodeNumbering: String? = null,
     val code: String? = null,
 )
 
@@ -203,6 +262,7 @@ internal fun PluginScraper.toStoredPluginScraper(): StoredPluginScraper =
         logo = logo,
         contentLanguage = contentLanguage,
         formats = formats,
+        animeEpisodeNumbering = animeEpisodeNumbering,
         code = null,
     )
 
@@ -226,6 +286,7 @@ internal fun StoredPluginScraper.restorePluginScraper(
             logo = logo,
             contentLanguage = contentLanguage,
             formats = formats,
+            animeEpisodeNumbering = animeEpisodeNumbering,
             code = resolvedCode,
         ),
         requiresMigration = code != null,

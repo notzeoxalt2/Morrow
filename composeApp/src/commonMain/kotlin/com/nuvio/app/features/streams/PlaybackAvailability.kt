@@ -14,11 +14,7 @@ import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.PluginsUiState
 
 internal fun AddonManifest.supportsStream(type: String, videoId: String): Boolean =
-    resources.any { resource ->
-        resource.name == "stream" &&
-            resource.types.contains(type) &&
-            (resource.idPrefixes.isEmpty() || resource.idPrefixes.any { videoId.startsWith(it) })
-    }
+    streamRequestTypes(type, videoId).isNotEmpty()
 
 internal fun hasCompatiblePlaybackSource(
     addons: List<ManagedAddon>,

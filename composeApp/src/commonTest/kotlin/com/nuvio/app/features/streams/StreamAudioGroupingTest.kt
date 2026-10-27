@@ -5,8 +5,12 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class StreamAudioGroupingTest {
-    private fun stream(name: String, provider: String = "Miruro", description: String? = null) =
-        StreamItem(name = name, addonName = provider, addonId = provider, description = description)
+    private fun stream(
+        name: String,
+        provider: String = "Miruro",
+        description: String? = null,
+        url: String? = null,
+    ) = StreamItem(name = name, addonName = provider, addonId = provider, description = description, url = url)
     @Test fun eachProviderAppearsOnceWithServerSubDubPairs() {
         val sections = listOf(
             AddonStreamGroup("Miruro", "old", listOf(stream("HD-2 [DUB]"), stream("HD-1 [SUB]"))),
@@ -37,5 +41,49 @@ class StreamAudioGroupingTest {
         assertEquals(1, sections.size)
         assertTrue(sections.single().isLoading)
         assertEquals(1, sections.single().streams.size)
+    }
+
+    @Test fun exactMediaLinksAreMarkedAcrossSitesWithoutMergingProviderSections() {
+        val url = "https://cdn.example/episode/master.m3u8?token=one"
+        val sections = listOf(
+            AddonStreamGroup("AnimeSalt", "salt", listOf(stream("MyStream [SUB]", "AnimeSalt", url = url))),
+            AddonStreamGroup("Anidap", "anidap", listOf(stream("Nero [SUB]", "Anidap", url = url))),
+        ).providerSections()
+
+        assertEquals(listOf("Anidap", "AnimeSalt"), sections.map { it.addonName })
+        assertEquals(listOf("AnimeSalt"), sections.first { it.addonName == "Anidap" }.streams.single().sameLinkAlsoOn)
+        assertEquals(listOf("Anidap"), sections.first { it.addonName == "AnimeSalt" }.streams.single().sameLinkAlsoOn)
+    }
+
+    @Test fun signedLinksWithRotatingAuthTokensAreMarkedAsTheSameMedia() {
+        val sections = listOf(
+            AddonStreamGroup("AnimeSalt", "salt", listOf(stream("MyStream", "AnimeSalt", url = "https://cdn.example/ep.m3u8?token=one"))),
+            AddonStreamGroup("Anidap", "anidap", listOf(stream("Nero", "Anidap", url = "https://cdn.example/ep.m3u8?token=two"))),
+        ).providerSections()
+
+        assertEquals(listOf("Anidap"), sections.first { it.addonName == "AnimeSalt" }.streams.single().sameLinkAlsoOn)
+        assertEquals(listOf("AnimeSalt"), sections.first { it.addonName == "Anidap" }.streams.single().sameLinkAlsoOn)
+    }
+
+    @Test fun providerFilterStillDetectsSameLinksFromTheUnfilteredResults() {
+        val url = "https://cdn.example/episode/master.m3u8?token=rotating"
+        val allGroups = listOf(
+            AddonStreamGroup("AnimeSalt", "salt", listOf(stream("MyStream [SUB]", "AnimeSalt", url = url))),
+            AddonStreamGroup("Anidap", "anidap", listOf(stream("Nero [SUB]", "Anidap", url = url))),
+        )
+
+        val filteredSections = listOf(allGroups.last()).providerSections(allGroups)
+
+        assertEquals(1, filteredSections.size)
+        assertEquals(listOf("AnimeSalt"), filteredSections.single().streams.single().sameLinkAlsoOn)
+    }
+
+    @Test fun meaningfulEpisodeAndQualityQueryValuesRemainDistinct() {
+        val sections = listOf(
+            AddonStreamGroup("AnimeSalt", "salt", listOf(stream("MyStream", "AnimeSalt", url = "https://cdn.example/ep.m3u8?ep=1&token=one"))),
+            AddonStreamGroup("Anidap", "anidap", listOf(stream("Nero", "Anidap", url = "https://cdn.example/ep.m3u8?ep=2&token=two"))),
+        ).providerSections()
+
+        assertTrue(sections.all { it.streams.single().sameLinkAlsoOn.isEmpty() })
     }
 }

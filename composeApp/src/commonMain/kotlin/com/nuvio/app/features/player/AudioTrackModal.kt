@@ -105,12 +105,6 @@ private fun AudioTrackRow(
 ) {
     val tokens = MaterialTheme.nuvio
     val primaryColor = if (isSelected) tokens.colors.onAccent else Color.White
-    val secondaryColor = if (isSelected) {
-        tokens.colors.onAccent.copy(alpha = 0.82f)
-    } else {
-        Color.White.copy(alpha = 0.72f)
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -126,21 +120,13 @@ private fun AudioTrackRow(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = localizedTrackDisplayName(track.label, track.language, track.index),
+                text = audioTrackDisplayName(track),
                 color = primaryColor,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            track.language?.takeIf { it.isNotBlank() && it != "und" }?.let { language ->
-                Text(
-                    text = languageLabelForCode(language),
-                    color = secondaryColor,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            // Keep technical codec/channel labels out of the language picker.
         }
         if (isSelected) {
             Icon(

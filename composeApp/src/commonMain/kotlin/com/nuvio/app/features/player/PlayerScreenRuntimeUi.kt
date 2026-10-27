@@ -193,6 +193,13 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     } else {
         ""
     }
+    val episodeClassificationLabel = when (activeEpisodeClassification) {
+        com.nuvio.app.features.anime.AnimeEpisodeClassification.Filler ->
+            stringResource(Res.string.player_episode_filler)
+        com.nuvio.app.features.anime.AnimeEpisodeClassification.Recap ->
+            stringResource(Res.string.player_episode_recap)
+        null -> ""
+    }
     val allFilterLabel = stringResource(Res.string.collections_tab_all)
     val playingLabel = stringResource(Res.string.compose_player_playing)
     val sourceFilters = buildPlayerControlFilters(
@@ -565,7 +572,11 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         }
 
         if (!isDesktop) {
-            RenderPlayerControls(displayedPositionMs = displayedPositionMs, isEpisode = isEpisode)
+            RenderPlayerControls(
+                displayedPositionMs = displayedPositionMs,
+                isEpisode = isEpisode,
+                episodeClassificationLabel = episodeClassificationLabel,
+            )
         }
         RenderPlaybackOverlays(
             runtime = runtime,
@@ -601,7 +612,11 @@ private fun PlayerScreenRuntime.currentInitialPositionRequestKey(): String? {
 }
 
 @Composable
-private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, isEpisode: Boolean) {
+private fun PlayerScreenRuntime.RenderPlayerControls(
+    displayedPositionMs: Long,
+    isEpisode: Boolean,
+    episodeClassificationLabel: String,
+) {
     val isInPip = rememberIsInPictureInPicture()
     AnimatedVisibility(
         visible = (controlsVisible || showParentalGuide) && !playerControlsLocked && !isInPip,
@@ -615,6 +630,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
             seasonNumber = activeSeasonNumber,
             episodeNumber = activeEpisodeNumber,
             episodeTitle = activeEpisodeTitle,
+            episodeClassificationLabel = episodeClassificationLabel,
             playbackSnapshot = playbackSnapshot,
             displayedPositionMs = displayedPositionMs,
             metrics = metrics,
@@ -632,11 +648,11 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
             onSpeedClick = { cyclePlaybackSpeed() },
             onSubtitleClick = {
                 refreshTracks()
-                showSubtitleModal = true
+                if (isDesktop) showQuickTracksModal = true else showSubtitleModal = true
             },
             onAudioClick = {
                 refreshTracks()
-                showAudioModal = true
+                if (isDesktop) showQuickTracksModal = true else showAudioModal = true
             },
             videoQuality = videoQuality,
             onQualityClick = {
@@ -813,11 +829,11 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
         PlayerControlsAction.Speed -> cyclePlaybackSpeed()
         PlayerControlsAction.Subtitles -> {
             refreshTracks()
-            showSubtitleModal = true
+            if (isDesktop) showQuickTracksModal = true else showSubtitleModal = true
         }
         PlayerControlsAction.Audio -> {
             refreshTracks()
-            showAudioModal = true
+            if (isDesktop) showQuickTracksModal = true else showAudioModal = true
         }
         PlayerControlsAction.Sources -> {
             prepareSourcesForPlayerControls()
@@ -1703,6 +1719,12 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
         onNextEpisodeAutoPlaySearchingChanged = { nextEpisodeAutoPlaySearching = it },
         onNextEpisodeAutoPlayCountdownChanged = { nextEpisodeAutoPlayCountdown = it },
         onNextEpisodeAutoPlaySourceNameChanged = { nextEpisodeAutoPlaySourceName = it },
+        showQuickTracksModal = showQuickTracksModal,
+        onQuickTracksModalDismissed = { showQuickTracksModal = false },
+        onQuickTracksOpenSubtitleSettings = {
+            showQuickTracksModal = false
+            showSubtitleModal = true
+        },
         showAudioModal = showAudioModal,
         audioTracks = audioTracks,
         selectedAudioIndex = selectedAudioIndex,

@@ -19,6 +19,9 @@ internal fun PlayerScreenModalHosts(
     onNextEpisodeAutoPlaySearchingChanged: (Boolean) -> Unit,
     onNextEpisodeAutoPlayCountdownChanged: (Int?) -> Unit,
     onNextEpisodeAutoPlaySourceNameChanged: (String?) -> Unit,
+    showQuickTracksModal: Boolean,
+    onQuickTracksModalDismissed: () -> Unit,
+    onQuickTracksOpenSubtitleSettings: () -> Unit,
     showAudioModal: Boolean,
     audioTracks: List<AudioTrack>,
     selectedAudioIndex: Int,
@@ -94,6 +97,23 @@ internal fun PlayerScreenModalHosts(
     onSubmitIntroDismissed: () -> Unit,
     onSubmitIntroSuccess: () -> Unit,
 ) {
+    QuickTracksModal(
+        visible = showQuickTracksModal,
+        audioTracks = audioTracks,
+        selectedAudioIndex = selectedAudioIndex,
+        subtitleTracks = subtitleTracks,
+        selectedSubtitleIndex = selectedSubtitleIndex,
+        addonSubtitles = addonSubtitles,
+        selectedAddonSubtitleId = selectedAddonSubtitleId,
+        isLoadingAddonSubtitles = isLoadingAddonSubtitles,
+        onAudioSelected = onAudioTrackSelected,
+        onSubtitleSelected = onBuiltInSubtitleTrackSelected,
+        onAddonSubtitleSelected = onAddonSubtitleSelected,
+        onFetchAddonSubtitles = onFetchAddonSubtitles,
+        onOpenSubtitleSettings = onQuickTracksOpenSubtitleSettings,
+        onDismiss = onQuickTracksModalDismissed,
+    )
+
     if (pendingP2pSwitch != null) {
         P2pConsentDialog(
             onEnableP2p = {

@@ -3,6 +3,8 @@ package com.nuvio.app.features.plugins.runtime
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.plugins.PluginRuntimeResult
 import com.nuvio.app.features.plugins.PluginStorage
+import com.nuvio.app.features.plugins.PLUGIN_DEFAULT_EXECUTION_TIMEOUT_MS
+import com.nuvio.app.features.plugins.pluginExecutionTimeoutMs
 import com.nuvio.app.features.plugins.runtime.crypto.CryptoBridge
 import com.nuvio.app.features.plugins.runtime.dom.DomBridge
 import com.nuvio.app.features.plugins.runtime.host.HostApiRegistry
@@ -39,7 +41,7 @@ import nuvio.composeapp.generated.resources.generic_unknown
 import org.jetbrains.compose.resources.getString
 
 internal const val MAX_CONCURRENT_PLUGINS = 30
-internal const val PLUGIN_TIMEOUT_MS = 15_000L
+internal const val PLUGIN_TIMEOUT_MS = PLUGIN_DEFAULT_EXECUTION_TIMEOUT_MS
 
 internal object PluginRuntime {
     private val log = Logger.withTag("PluginRuntime")
@@ -69,13 +71,7 @@ internal object PluginRuntime {
 
             return scraperSemaphore.withPermit {
                 withContext(pluginDispatcher) {
-                    // AniFlix enumerates multiple site servers; its metadata bundle can exceed five seconds.
-                    val providerId = scraperId.substringAfterLast(':')
-                    val extendedServerLookup = listOf("aniflix", "meguanimes", "anikage").any {
-                        providerId == it || providerId.startsWith("$it-")
-                    }
-                    val timeoutMs = if (extendedServerLookup) 45_000L else PLUGIN_TIMEOUT_MS
-                    withTimeout(timeoutMs) {
+                    withTimeout(pluginExecutionTimeoutMs(scraperId)) {
                         executePluginInternal(
                             code = code,
                             tmdbId = tmdbId,

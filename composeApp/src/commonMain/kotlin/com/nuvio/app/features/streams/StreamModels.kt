@@ -30,6 +30,8 @@ data class StreamItem(
     val debridCacheStatus: StreamDebridCacheStatus? = null,
     val externalSubtitles: List<StreamSubtitle> = emptyList(),
     val badges: List<StreamBadge> = emptyList(),
+    /** Other provider sections that returned the exact same direct media URL. */
+    val sameLinkAlsoOn: List<String> = emptyList(),
 ) {
     val streamLabel: String
         get() = name?.takeIf { it.isNotBlank() } ?: "Stream"

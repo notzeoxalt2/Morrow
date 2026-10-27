@@ -158,3 +158,13 @@ fun localizedTrackDisplayName(label: String?, language: String?, index: Int): St
     if (!language.isNullOrBlank()) return languageLabelForCode(language)
     return stringResource(Res.string.compose_player_track_number, index + 1)
 }
+
+@Composable
+fun audioTrackDisplayName(track: AudioTrack): String {
+    val language = audioTrackLanguageCode(track.language, track.label)
+    return if (language != null) {
+        languageLabelForCode(language)
+    } else {
+        stringResource(Res.string.compose_player_track_number, track.index + 1)
+    }
+}

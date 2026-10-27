@@ -353,7 +353,10 @@ actual object PluginRepository {
         if (!_uiState.value.pluginsEnabled) return emptyList()
         val installedUrls = _uiState.value.repositories.map { it.manifestUrl.lowercase() }.toSet()
         return _uiState.value.scrapers.filter { scraper ->
-            scraper.enabled && scraper.supportsType(type) && scraper.repositoryUrl.lowercase() in installedUrls
+            scraper.enabled &&
+                scraper.supportsType(type) &&
+                scraper.repositoryUrl.lowercase() in installedUrls &&
+                !MorrowProviderMigration.isRetiredScraper(scraper.repositoryUrl, scraper.id)
         }
     }
 
@@ -383,6 +386,7 @@ actual object PluginRepository {
         episode: Int?,
         animeEpisodeNumber: Int?,
         animeTitle: String?,
+        animeSeasonEpisodeNumber: Int?,
     ): Result<List<PluginRuntimeResult>> = executeScraperInternal(
         scraper = scraper,
         tmdbId = tmdbId,
@@ -391,6 +395,7 @@ actual object PluginRepository {
         episode = episode,
         animeEpisodeNumber = animeEpisodeNumber,
         animeTitle = animeTitle,
+        animeSeasonEpisodeNumber = animeSeasonEpisodeNumber,
         respectSearchPause = true,
     )
 
@@ -402,12 +407,24 @@ actual object PluginRepository {
         episode: Int?,
         animeEpisodeNumber: Int? = null,
         animeTitle: String? = null,
+        animeSeasonEpisodeNumber: Int? = null,
         respectSearchPause: Boolean,
     ): Result<List<PluginRuntimeResult>> {
         val effectiveMediaType = if (mediaType.equals("anime", ignoreCase = true)) {
             if (season != null || episode != null) "tv" else "movie"
         } else {
             normalizePluginType(mediaType)
+        }
+
+        val animeNumbering = scraper.animeEpisodeNumberingMode()
+        if (mediaType.equals("anime", ignoreCase = true) &&
+            animeNumbering == "absolute" &&
+            (season ?: 1) > 1 &&
+            animeEpisodeNumber == null
+        ) {
+            return Result.failure(IllegalStateException(
+                "This provider uses a flat episode catalog, but Morrow could not map this season to an absolute episode number."
+            ))
         }
 
         val animeMapping = if (Regex("^(anilist|mal|kitsu):", RegexOption.IGNORE_CASE).containsMatchIn(tmdbId)) {
@@ -417,7 +434,14 @@ actual object PluginRepository {
             put("originalId", tmdbId)
             animeMapping?.mappings?.anilist_id?.let { put("anilistId", it.toString()) }
             if (mediaType.equals("anime", ignoreCase = true)) {
-                (animeEpisodeNumber ?: episode)?.let { put("animeEpisode", it.toString()) }
+                val numbering = animeNumbering
+                put("animeEpisodeNumbering", numbering)
+                (animeSeasonEpisodeNumber ?: episode)?.let { put("animeSeasonEpisode", it.toString()) }
+                season?.let { put("animeSeason", it.toString()) }
+                animeEpisodeNumber?.let { put("animeEpisodeAbsolute", it.toString()) }
+                (if (numbering == "absolute") animeEpisodeNumber
+                else animeSeasonEpisodeNumber ?: episode)
+                    ?.let { put("animeEpisode", it.toString()) }
             }
             (animeTitle?.takeIf(String::isNotBlank) ?: animeMapping?.titles?.get("en"))
                 ?.let { put("animeTitle", it) }
@@ -521,6 +545,7 @@ actual object PluginRepository {
                                         logo = info.logo,
                                         contentLanguage = info.contentLanguage ?: emptyList(),
                                         formats = info.formats ?: info.supportedFormats,
+                                        animeEpisodeNumbering = info.animeEpisodeNumbering,
                                         code = code,
                                     )
                                 }.getOrNull()
