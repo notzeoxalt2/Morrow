@@ -22,4 +22,45 @@ class AnimeEpisodeClassificationTest {
         assertNull(AnimeMetadataService.classifyAnimeEpisode(filler = false, recap = false))
         assertNull(AnimeMetadataService.classifyAnimeEpisode(filler = null, recap = null))
     }
+
+    @Test
+    fun laterSeasonUsesVerifiedAbsoluteAnimeEpisodeForSeriesMalId() {
+        assertEquals(
+            AnimeMalEpisodeLookup(malId = 1735, episode = 73),
+            resolveAnimeMalEpisodeLookup(
+                malId = 1735,
+                episodeMalId = null,
+                season = 4,
+                episode = 1,
+                absoluteEpisode = 73,
+            ),
+        )
+    }
+
+    @Test
+    fun exactSeasonMalMappingKeepsSeasonLocalEpisodeNumber() {
+        assertEquals(
+            AnimeMalEpisodeLookup(malId = 50803, episode = 1),
+            resolveAnimeMalEpisodeLookup(
+                malId = 127641,
+                episodeMalId = 50803,
+                season = 4,
+                episode = 1,
+                absoluteEpisode = 73,
+            ),
+        )
+    }
+
+    @Test
+    fun laterSeasonWithoutVerifiedEpisodeMappingDoesNotGuess() {
+        assertNull(
+            resolveAnimeMalEpisodeLookup(
+                malId = 1735,
+                episodeMalId = null,
+                season = 4,
+                episode = 1,
+                absoluteEpisode = null,
+            ),
+        )
+    }
 }

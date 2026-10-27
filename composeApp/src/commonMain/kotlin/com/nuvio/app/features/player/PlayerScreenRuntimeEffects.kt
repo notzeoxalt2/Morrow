@@ -497,22 +497,21 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         val episodeMeta = playerMeta?.videos?.firstOrNull {
             it.season == seasonNumber && it.episode == episodeNumber
         }
-        val mappedEpisodeMalId = episodeMeta?.animeMalId
-            ?: playerMeta?.malId?.takeIf { seasonNumber == null || seasonNumber <= 1 }
-        val mappedEpisodeNumber = when {
-            episodeMeta?.animeMalId != null -> episodeNumber
-            mappedEpisodeMalId != null && seasonNumber != null && seasonNumber <= 1 -> episodeNumber
-            else -> null
-        }
-        val absoluteEpisode = if (episodeMeta?.animeMalId != null) null else {
-            playerMeta?.absoluteEpisodeNumber(seasonNumber, episodeNumber)
-        }
+        val absoluteEpisode = episodeMeta?.absoluteEpisodeNumber?.takeIf { it > 0 }
+            ?: playerMeta?.absoluteEpisodeNumber(seasonNumber, episodeNumber)
+        val malEpisodeLookup = com.nuvio.app.features.anime.resolveAnimeMalEpisodeLookup(
+            malId = playerMeta?.malId,
+            episodeMalId = episodeMeta?.animeMalId,
+            season = seasonNumber,
+            episode = episodeNumber,
+            absoluteEpisode = absoluteEpisode,
+        )
         val lookup = resolveSkipIntervalLookup(
             videoId = activeVideoId,
             season = seasonNumber,
             episode = episodeNumber,
-            mappedMalId = mappedEpisodeMalId,
-            mappedMalEpisode = mappedEpisodeNumber,
+            mappedMalId = malEpisodeLookup?.malId,
+            mappedMalEpisode = malEpisodeLookup?.episode,
             absoluteEpisode = absoluteEpisode,
         ) ?: return@LaunchedEffect
 
@@ -571,16 +570,17 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         val episodeMeta = playerMeta?.videos?.firstOrNull {
             it.season == seasonNumber && it.episode == episodeNumber
         }
-        val malId = episodeMeta?.animeMalId
-            ?: playerMeta?.malId?.takeIf { seasonNumber == null || seasonNumber <= 1 }
-            ?: return@LaunchedEffect
-        val malEpisode = when {
-            episodeMeta?.animeMalId != null -> episodeNumber
-            seasonNumber == null || seasonNumber <= 1 -> episodeNumber
-            else -> null
-        }?.takeIf { it > 0 } ?: return@LaunchedEffect
+        val absoluteEpisode = episodeMeta?.absoluteEpisodeNumber?.takeIf { it > 0 }
+            ?: playerMeta?.absoluteEpisodeNumber(seasonNumber, episodeNumber)
+        val lookup = com.nuvio.app.features.anime.resolveAnimeMalEpisodeLookup(
+            malId = playerMeta?.malId,
+            episodeMalId = episodeMeta?.animeMalId,
+            season = seasonNumber,
+            episode = episodeNumber,
+            absoluteEpisode = absoluteEpisode,
+        ) ?: return@LaunchedEffect
 
-        activeEpisodeClassification = AnimeMetadataService.getEpisodeClassification(malId, malEpisode)
+        activeEpisodeClassification = AnimeMetadataService.getEpisodeClassification(lookup.malId, lookup.episode)
     }
 
     LaunchedEffect(

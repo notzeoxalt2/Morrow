@@ -144,6 +144,36 @@ enum class AnimeEpisodeClassification {
     Recap,
 }
 
+internal data class AnimeMalEpisodeLookup(
+    val malId: Int,
+    val episode: Int,
+)
+
+/** Resolve the MAL episode coordinate without confusing a TMDB season-local index with an anime episode. */
+internal fun resolveAnimeMalEpisodeLookup(
+    malId: Int?,
+    episodeMalId: Int?,
+    season: Int?,
+    episode: Int?,
+    absoluteEpisode: Int?,
+): AnimeMalEpisodeLookup? {
+    val localEpisode = episode?.takeIf { it > 0 } ?: return null
+    val verifiedAbsoluteEpisode = absoluteEpisode?.takeIf { it > 0 }
+    val resolvedMalId = episodeMalId?.takeIf { it > 0 }
+        ?: malId?.takeIf { it > 0 && (season == null || season <= 1 || verifiedAbsoluteEpisode != null) }
+        ?: return null
+    // AniZip's per-season MAL ID uses season-local numbering. Only use the
+    // cross-season absolute number when looking up the overall series MAL ID.
+    val resolvedEpisode = if (episodeMalId != null) {
+        localEpisode
+    } else {
+        verifiedAbsoluteEpisode
+            ?: localEpisode.takeIf { season == null || season <= 1 }
+    }
+        ?: return null
+    return AnimeMalEpisodeLookup(malId = resolvedMalId, episode = resolvedEpisode)
+}
+
 /**
  * Anime metadata & ID mapping service ported from SmoothVega's animeMetadata.ts.
  * Integrates AniList GraphQL (graphql.anilist.co), AniZip (api.ani.zip), and Tenrai/MAL.
